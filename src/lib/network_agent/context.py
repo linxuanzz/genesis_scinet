@@ -12,6 +12,7 @@ The three books form a chain, each entry pointing back to the previous one by id
     commitments    commitment_id → Commitment    written by commit (step 5a)
 """
 
+from collections import defaultdict
 from collections.abc import Iterator
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -73,8 +74,8 @@ class AgentContext:
     offer_book: dict[str, QuotedOffer] = field(default_factory=dict)
     reservations: dict[str, Reservation] = field(default_factory=dict)
     commitments: dict[str, Commitment] = field(default_factory=dict)
-    _seq: Iterator[int] = field(init=False, repr=False, default_factory=lambda: count(1))
+    _seq: dict[str, Iterator[int]] = field(init=False, repr=False, default_factory=lambda: defaultdict(lambda: count(1)))
 
     def new_id(self, prefix: str) -> str:
-        """A fresh id such as "rsv-1", unique within this agent."""
-        return f"{prefix}-{next(self._seq)}"
+        """A fresh id such as "rsv-1", unique within this agent; each prefix counts from 1."""
+        return f"{prefix}-{next(self._seq[prefix])}"

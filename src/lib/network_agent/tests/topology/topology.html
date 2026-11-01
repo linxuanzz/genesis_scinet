@@ -1,0 +1,153 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Test Topology</title>
+<!-- The network built by tests/helpers.py (TOPO, make_net). Keep in sync when TOPO changes. -->
+<style>
+  :root {
+    --bg: #ffffff; --fg: #1d2129; --muted: #69707d; --border: #d5d9e0; --panel: #f6f7f9;
+    --node: #ffffff; --main: #2463eb; --alt: #d97706; --bg-traffic: #dc2626; --site: #f1f4f8;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #16181d; --fg: #e6e8eb; --muted: #9aa1ad; --border: #3a3f48; --panel: #1f2228;
+      --node: #23272e; --main: #6b9bff; --alt: #f5a524; --bg-traffic: #f87171; --site: #1c1f25;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #16181d; --fg: #e6e8eb; --muted: #9aa1ad; --border: #3a3f48; --panel: #1f2228;
+    --node: #23272e; --main: #6b9bff; --alt: #f5a524; --bg-traffic: #f87171; --site: #1c1f25;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--fg);
+         font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+  main { max-width: 1120px; margin: 0 auto; padding: 24px 16px 40px; }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  h2 { font-size: 15px; margin: 28px 0 8px; }
+  p { margin: 0 0 8px; color: var(--muted); }
+  code { font: 12.5px ui-monospace, SFMono-Regular, Menlo, monospace; }
+  .figure { border: 1px solid var(--border); border-radius: 10px; background: var(--panel); padding: 8px; overflow-x: auto; }
+  svg { display: block; width: 100%; min-width: 640px; height: auto; }
+  svg text { fill: var(--fg); font-family: inherit; }
+  .site rect { fill: var(--site); stroke: var(--border); stroke-dasharray: 4 4; }
+  .site text { fill: var(--muted); font-size: 12px; letter-spacing: .04em; }
+  .link { stroke: var(--muted); stroke-width: 2; }
+  .main { stroke: var(--main); stroke-width: 6; stroke-linecap: round; opacity: .85; }
+  .alt { stroke: var(--alt); stroke-width: 4; stroke-dasharray: 9 6; fill: none; }
+  .node rect { fill: var(--node); stroke: var(--fg); stroke-width: 1.2; }
+  .node.endpoint rect { stroke: var(--main); stroke-width: 2.5; }
+  .node text { font-size: 12.5px; text-anchor: middle; }
+  .node .role { fill: var(--main); font-size: 11px; font-weight: 600; }
+  .lbl { font-size: 12px; text-anchor: middle; }
+  .lbl .id { font-weight: 700; }
+  .lbl .cap { fill: var(--muted); }
+  .traffic { fill: var(--bg-traffic); font-size: 11.5px; text-anchor: middle; }
+  .traffic-bar { fill: var(--bg-traffic); opacity: .9; }
+  .legend { display: flex; flex-wrap: wrap; gap: 8px 20px; margin: 10px 2px 0; color: var(--muted); font-size: 13px; }
+  .legend span::before { content: ""; display: inline-block; width: 26px; height: 0; margin-right: 6px; vertical-align: middle; }
+  .legend .l-main::before { border-top: 5px solid var(--main); }
+  .legend .l-alt::before { border-top: 3px dashed var(--alt); }
+  .legend .l-link::before { border-top: 2px solid var(--muted); }
+  .legend .l-bg::before { border-top: 5px solid var(--bg-traffic); }
+  .table-wrap { overflow-x: auto; }
+  table { border-collapse: collapse; width: 100%; font-size: 13px; }
+  th, td { text-align: left; padding: 6px 10px; border-bottom: 1px solid var(--border); white-space: nowrap; }
+  th { color: var(--muted); font-weight: 600; }
+  td.note { white-space: normal; color: var(--muted); }
+</style>
+</head>
+<body>
+<main>
+  <h1>Test topology</h1>
+  <p>The simulated network every network agent test runs on (<code>tests/helpers.py</code>: <code>TOPO</code>, <code>make_net</code>).
+     Test transfers go from <code>anl-n02</code> to <code>ornl-n01</code>. Capacities are per direction.</p>
+
+  <div class="figure">
+    <svg viewBox="0 0 1100 360" role="img" aria-label="Seven nodes in a chain from aps-beamline-8id to ornl-n01, with a detour via esnet-nash between esnet-atl and esnet-chi">
+      <!-- sites -->
+      <g class="site">
+        <rect x="16" y="40" width="508" height="140" rx="12"/><text x="30" y="60">ANL</text>
+        <rect x="548" y="40" width="352" height="300" rx="12"/><text x="562" y="60">ESnet</text>
+        <rect x="924" y="40" width="160" height="140" rx="12"/><text x="938" y="60">ORNL</text>
+      </g>
+
+      <!-- main path L1 → L2 → L3 (drawn under the links) -->
+      <line class="main" x1="440" y1="120" x2="640" y2="120"/>
+      <line class="main" x1="640" y1="120" x2="820" y2="120"/>
+      <line class="main" x1="820" y1="120" x2="1004" y2="120"/>
+
+      <!-- physical links -->
+      <line class="link" x1="96" y1="120" x2="268" y2="120"/>
+      <line class="link" x1="268" y1="120" x2="440" y2="120"/>
+      <line class="link" x1="440" y1="120" x2="640" y2="120"/>
+      <line class="link" x1="640" y1="120" x2="820" y2="120"/>
+      <line class="link" x1="820" y1="120" x2="1004" y2="120"/>
+
+      <!-- detour L4 → L5 via esnet-nash -->
+      <polyline class="alt" points="640,120 640,280 820,280 820,120"/>
+
+      <!-- link labels -->
+      <text class="lbl" x="182" y="94"><tspan class="id">APS-LCRC</tspan> <tspan class="cap">100 Gbps</tspan></text>
+      <text class="lbl" x="354" y="94"><tspan class="id">L0</tspan> <tspan class="cap">100 Gbps</tspan></text>
+      <text class="lbl" x="540" y="94"><tspan class="id">L1</tspan> <tspan class="cap">100 Gbps</tspan></text>
+      <text class="lbl" x="730" y="94"><tspan class="id">L2</tspan> <tspan class="cap">100 Gbps</tspan></text>
+      <text class="lbl" x="912" y="94"><tspan class="id">L3</tspan> <tspan class="cap">100 Gbps</tspan></text>
+      <text class="lbl" x="652" y="226" style="text-anchor:start"><tspan class="id">L4</tspan> <tspan class="cap">40 Gbps</tspan></text>
+      <text class="lbl" x="808" y="226" style="text-anchor:end"><tspan class="id">L5</tspan> <tspan class="cap">40 Gbps</tspan></text>
+
+      <!-- background traffic on L2 (make_net default) -->
+      <rect class="traffic-bar" x="676" y="140" width="108" height="5" rx="2"/>
+      <text class="traffic" x="730" y="162">background 60 Gbps</text>
+      <text class="traffic" x="730" y="177">09:00–12:00 → 40 left</text>
+
+      <!-- nodes -->
+      <g class="node"><rect x="34" y="104" width="124" height="32" rx="6"/><text x="96" y="125">aps-beamline-8id</text></g>
+      <g class="node"><rect x="222" y="104" width="92" height="32" rx="6"/><text x="268" y="125">anl-n01</text></g>
+      <g class="node endpoint"><rect x="394" y="104" width="92" height="32" rx="6"/><text x="440" y="125">anl-n02</text>
+        <text class="role" x="440" y="152">SRC</text></g>
+      <g class="node"><rect x="590" y="104" width="100" height="32" rx="6"/><text x="640" y="125">esnet-atl</text></g>
+      <g class="node"><rect x="770" y="104" width="100" height="32" rx="6"/><text x="820" y="125">esnet-chi</text></g>
+      <g class="node"><rect x="676" y="264" width="108" height="32" rx="6"/><text x="730" y="285">esnet-nash</text></g>
+      <g class="node endpoint"><rect x="958" y="104" width="92" height="32" rx="6"/><text x="1004" y="125">ornl-n01</text>
+        <text class="role" x="1004" y="152">DST</text></g>
+    </svg>
+  </div>
+  <div class="legend">
+    <span class="l-main">main path <code>MAIN</code> (3 hops)</span>
+    <span class="l-alt">detour via esnet-nash, part of <code>ALT</code> (4 hops)</span>
+    <span class="l-link">other links</span>
+    <span class="l-bg">background traffic</span>
+  </div>
+
+  <h2>Paths from anl-n02 to ornl-n01</h2>
+  <div class="table-wrap">
+    <table>
+      <tr><th>Name</th><th>Directed links</th><th>Bottleneck</th><th class="note">Note</th></tr>
+      <tr><td><code>MAIN</code></td><td><code>L1 → L2 → L3</code></td><td>100 Gbps (40 before 12:00)</td>
+          <td class="note">L2 carries the background traffic</td></tr>
+      <tr><td><code>ALT</code></td><td><code>L1 → L4 → L5 → L3</code></td><td>40 Gbps</td>
+          <td class="note">shares L1 and L3 with MAIN; L4, L5 and esnet-nash are made up for multi-path tests</td></tr>
+    </table>
+  </div>
+
+  <h2>Links</h2>
+  <p>Each physical link is two directed links with the same capacity; code refers to them as <code>{id}:{src}&gt;{dst}</code>.</p>
+  <div class="table-wrap">
+    <table>
+      <tr><th>Link</th><th>Endpoints</th><th>Capacity</th><th>Constant (forward direction)</th></tr>
+      <tr><td>APS-LCRC</td><td>aps-beamline-8id — anl-n01</td><td>100 Gbps</td><td></td></tr>
+      <tr><td>L0</td><td>anl-n01 — anl-n02</td><td>100 Gbps</td><td></td></tr>
+      <tr><td>L1</td><td>anl-n02 — esnet-atl</td><td>100 Gbps</td><td><code>L1 = "L1:anl-n02&gt;esnet-atl"</code></td></tr>
+      <tr><td>L2</td><td>esnet-atl — esnet-chi</td><td>100 Gbps</td><td><code>L2 = "L2:esnet-atl&gt;esnet-chi"</code> (reverse: <code>L2_BACK</code>)</td></tr>
+      <tr><td>L3</td><td>esnet-chi — ornl-n01</td><td>100 Gbps</td><td><code>L3 = "L3:esnet-chi&gt;ornl-n01"</code></td></tr>
+      <tr><td>L4</td><td>esnet-atl — esnet-nash</td><td>40 Gbps</td><td><code>L4 = "L4:esnet-atl&gt;esnet-nash"</code></td></tr>
+      <tr><td>L5</td><td>esnet-nash — esnet-chi</td><td>40 Gbps</td><td><code>L5 = "L5:esnet-nash&gt;esnet-chi"</code></td></tr>
+    </table>
+  </div>
+  <p style="margin-top:10px">The slide gives no capacities, so the 100 Gbps links are assumed. <code>make_net(background_gbps=60)</code> adds the
+     L2 background traffic shown above; individual tests and demo scenarios add more with <code>net.add_background(...)</code>.</p>
+</main>
+</body>
+</html>

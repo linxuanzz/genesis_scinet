@@ -13,6 +13,7 @@ import pytest
 from ..graphs.quote import build_quote_graph
 from ..schemas import QuoteRequest, RateSegment
 from .helpers import L2, MAIN, make_ctx, make_net, quote, t, tr
+from .printing import hops, print_network
 
 
 @pytest.fixture
@@ -144,12 +145,6 @@ SCENARIOS = {
 }
 
 
-def hops(topology, path):
-    """Directed link id sequence → 'anl-n02 ─L1→ esnet-atl ─L2→ ...'"""
-    links = [topology.links[d] for d in path]
-    return links[0].src + "".join(f" ─{d.link_id}→ {d.dst}" for d in links)
-
-
 def availability_runs(ledger, path, start, end):
     """A path's available capacity over [start, end), merging adjacent equal runs: [(start, end, Gbps, bottleneck link)]."""
     runs = []
@@ -165,19 +160,7 @@ def availability_runs(ledger, path, start, end):
 
 def print_scenario(title, net, ctx, req, now, out):
     topo = net.topology
-    print(f"\n{'=' * 100}\n{title}\n{'=' * 100}")
-    print("Nodes:", ", ".join(topo.nodes))
-    print("Links (physical; capacity is per direction):")
-    printed = set()
-    for d in topo.links.values():                           # print each physical link once, in its defined a → b direction
-        if d.link_id not in printed:
-            printed.add(d.link_id)
-            print(f"  {d.link_id}: {d.src} — {d.dst}   {d.capacity_gbps:g} Gbps")
-    print("Background traffic:")
-    for link, ivs in net._background.items():
-        for iv in ivs:
-            print(f"  {link}   {iv.start:%H:%M}–{iv.end:%H:%M}   {iv.gbps:g} Gbps")
-    print("Outages:", [f"{link} {iv.start:%H:%M}–{iv.end:%H:%M}" for link, ivs in net._outages.items() for iv in ivs] or "none")
+    print_network(title, net)
 
     print(f"\nRequest {req.quote_id} (mode={req.mode}), now = {now:%H:%M}:")
     for tr_ in req.bundle:

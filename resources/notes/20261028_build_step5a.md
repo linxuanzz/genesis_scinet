@@ -321,3 +321,104 @@ quote 子图内部跑完所有节点，自己的 state 里攒下 request、paths
 - `graphs/protocol.py` 只剩入口：`ProtocolState`、`route_verb`、`after_route`、`build_protocol_graph()`。
 - 这样 `graphs/` 下是一个入口文件加三条分支各一个文件（quote.py、reserve.py、commit.py），再加共用的 common.py，结构是对称的。
 - 测试里 `from ..graphs.protocol import build_quote_graph` 改成了 `from ..graphs.quote import ...`。116 个测试全部通过。
+
+---
+
+> 继续写D
+
+D 部分是 5a 的 demo，117 个测试全部通过（demo 本身也是一个测试，四个场景都要跑通且返回预期类型的消息）。
+
+**运行方式**（仓库根目录）：
+
+```
+.venv/bin/python -m src.lib.network_agent.tests.test_step5a_demo test1    # test1 … test4
+```
+
+**四个场景**
+
+| 参数 | 场景 | 看点 |
+|---|---|---|
+| test1 | 正常流程：quote T1+T2 → 各选一个 offer 一起 reserve → commit | reserve 之后账本立刻出现 own、SENSE 出现两个 reserved 实例；commit 后变成 confirmed / committed，账本数字不变 |
+| test2 | quote 之后 L2 又被别人占了 30 Gbps，09:10 才来 reserve | 观测已过期 → recheck 刷新 → `conflict`，SENSE 没被调用；scheduling agent 重新 quote（q2 里出现了走 nash 绕行路径的 offer），再 reserve、commit 成功 |
+| test3 | quote 之后 12:00–13:00 被别人占了 30 Gbps，09:01 就来 reserve 一组两个 offer | 观测还新鲜，账本不知道 → SENSE 接受第一个、拒绝第二个 → 第一个实例 `cancelled`，账本全部回滚 |
+| test4 | SENSE 第一次 commit 失败 | 账本仍 pending、实例仍 reserved；TTL 内重试成功 |
+
+**每条消息之后打印的内容**
+
+- 主路径三跳的账本，按时间段合并：observed（telemetry 上次报告的值）、own（我们的预订）、available，以及 `(stale)` 标记（该值已过期，下次用到时会刷新）。一开始全是 `100 (stale)`，那是拓扑里的初始容量，还没被 telemetry 刷新过。
+- Reservations：每个 offer 的时段、速率、账本 booking 的状态（pending / confirmed）。
+- SENSE 实例：状态、VLAN、alias，以及它在模拟网络里实际占着的带宽。
+
+**为了 D 顺带改的地方**
+
+- 新文件 `tests/printing.py`：step 4 和 5a 的 demo 共用的 `hops()`、`print_network()` 从 step 4 测试里挪了过来。改完后 step 4 的三个场景输出与改之前逐字相同（diff 过）。
+- `context.new_id` 改为每个前缀各自计数：之前所有 id 共用一个计数器，commitment 会编号成 `cmt-2`、`cmt-3`。
+
+**demo 里能看到的两个现象**
+
+- T2 只传 09:00:00–09:03:20，账本却把 09:00–09:15 整个 slot 记为 40 Gbps。这就是 slide 23 说的时间槽量化误差：slot 越大，浪费越多。
+- test2 里第二次 reserve 得到的是 `rsv-2` 而不是 `rsv-1`：`rsv-1` 在第一次（失败的）reserve 校验通过时就分配掉了，因为后面的 booking id 和 intent alias 都要用它。id 有空号是正常的。
+
+---
+
+> 把topology以html的形式画进src/lib/network_agent/tests/topology
+
+新建 `src/lib/network_agent/tests/topology/topology.html`，是一个独立的单页文件，直接用浏览器打开即可。页面内容如下：
+
+- **拓扑图（SVG）**：
+  - 7 个节点按站点分成 ANL、ESnet、ORNL 三组，起点 `anl-n02` 标 SRC，终点 `ornl-n01` 标 DST。
+  - 每条链路标注 id 和容量。
+  - 主路径 `MAIN`（L1→L2→L3）用蓝色粗线画。
+  - 经 esnet-nash 的绕行段（L4、L5，属于 `ALT`）用橙色虚线画。
+  - L2 下方画了 `make_net()` 默认的背景流量：09:00–12:00 占 60 Gbps，剩 40 Gbps。
+- **路径表**：列出 MAIN 和 ALT 经过的有向链路和瓶颈带宽；ALT 一行注明它与 MAIN 共用 L1、L3。
+- **链路表**：列出端点、容量，以及 helpers.py 里对应常量的写法 `{id}:{src}>{dst}`。
+
+这张图是按 `helpers.py` 的 `TOPO` 手工画的，不是从代码生成的。`TOPO` 以后改了，这张图要跟着手动改，文件开头的注释里写了这一点。页面文字全是英文，`sync` 时可以原样带进两个共享仓库。
+
+---
+
+> 我发现network agent给offer的时候没有考虑两种offer之间的矛盾性，比如q1/T1/2和q1/T2/2是不能同时选的。这种矛盾性是故意交给scheduling agent处理的吗
+
+不是有意的设计，而是第 4 步留下的空白。不管是 slides、会议记录还是 PLAN，都没有讨论过"同一 bundle 内的 offer 互相冲突"这个问题。
+
+**原因**：`find_placements` 是一条传输一条传输地搜索的，每条都对着同一份账本单独算，不会把同组其他传输要占的带宽算进去。所以每个 offer 单独看都能成立，组合起来就不一定了。用 slide 7 的场景实测过：
+
+| 组合 | reserve 结果 |
+|---|---|
+| q1/T1/2 + q1/T2/2 | `conflict`：两者都在 12:00 那个时间槽要 100 Gbps，L1 只有 100 |
+| q1/T1/1 + q1/T2/1 | `conflict`：两者都在 09:00 那个时间槽要 40 Gbps，L2 只剩 40 |
+| q1/T1/2 + q1/T2/1 | 成功 |
+
+**现在的兜底**：reserve 时 `pending_group` 会对整组做原子检查，冲突就整组拒绝，返回 `conflict`，不会超订。所以结果是正确的，只是要多试几次才能找到可行组合。
+
+**不能交给 scheduling agent 的理由**：offer 里没有路径，也没有链路容量，scheduling agent 根本无法判断哪些组合会冲突，只能逐个试 reserve，每试一次都多一轮往返。另外 `admissible` 也是一条传输一条传输判断的，all_or_nothing 模式下可能回答"可接纳"，实际却一个可行组合都没有。还有一个小问题：组内冲突时返回的错误信息写着"capacity no longer available"，容易让人误以为是网络变了。
+
+**建议的修法**：报价时由 network agent 至少给出一个"经过联合验证的组合"。具体做法是在账本副本上，按 priority 依次试扣每条传输的 offer，这一步可以复用 `pending_group` 的检查逻辑，最后把能同时成立的那组 offer 一起返回；`admissible` 也改成依据这个组合来判断。reserve 时的原子检查继续保留，作为兜底。这样做会改动 `QuoteResponse` 的格式，scheduling agent 那边也得跟着改，所以需要先和对方对齐接口。
+
+---
+
+> 报价时由 network agent 至少给出一个"经过联合验证的组合"。所以最终network agent返回的组合offer应该是树状的结构吗，即：T1选择1的情况下，T2可以选择....；T1选择2的情况下，T2可以选择...
+
+从概念上说，"所有可行组合"确实是一棵树。但我不建议把整棵树返回给 scheduling agent。下面用 slide 7 的场景做了个试验：先在账本上预扣 T1 的某个 offer，再给 T2 重新搜索。
+
+| T1 选 | T2 在剩余容量下的方案（开始时间@速率 → 完成时间，跳数） |
+|---|---|
+| q1/T1/1  09:00@40 | 12:00@100 → 12:01:20 (3)；12:00@10 → 12:13:20 (3)；**09:00@40 → 09:03:20，走绕行 (4)**；09:00@10 → 09:13:20，走绕行 (4) |
+| q1/T1/2  12:00@100 | 09:00@40 → 09:03:20 (3)；**13:15@100 → 13:16:20 (3)**；09:00@10 → 09:13:20 (3) |
+| q1/T1/3  09:00@20 | **09:00@20 → 09:06:40 (3)**；**14:45@100 → 14:46:20 (3)**；09:00@10 → 09:13:20 (3)；09:00@40 → 09:03:20，走绕行 (4) |
+
+可以看出三点：
+
+1. **分支下的选项会变，不只是从原列表里删掉几个**。上表中加粗的方案，原来那份单独报价里都没有。例如 T1 选 1 之后，T2 改走绕行路径仍然能 09:00 开始；如果只在原有 offer 里挑互不冲突的组合，会错过这类方案。所以联合验证应该"按条件重新搜索"，而不是"在已有 offer 之间两两检查"。
+2. **整棵树会指数增长**。每条传输约 3 个方案，n 条传输就有约 3ⁿ 片叶子：5 条传输是 243 种组合，每种都要搜索一遍，返回的消息也会很大。
+3. **树和顺序有关**。先定 T1 再搜 T2，和先定 T2 再搜 T1，得到的是两棵不同的树。按什么顺序展开，本身就隐含了"谁优先"的判断。
+
+**建议**：不返回整棵树，只返回树中的几条"根到叶"的路径，也就是几个完整的 bundle plan：
+
+- 每条传输各自的 offer 照旧返回。
+- 另外附上 k 个 plan，每个 plan 是一组能同时成立的 offer，例如 `{T1: q1/T1/2, T2: q1/T2/1}`。生成方法：先按 priority 排好传输的顺序，第一条传输的每个 offer 各开一个 plan，后面的传输在账本副本上依次按贪心方式放置（每次在剩余容量里挑一个，例如完成最早的那个）。这样 plan 的数量与第一层的分支数相同，增长是线性的，不是指数的。
+- plan 里如果出现原列表中没有的新方案（例如 13:15@100），就给它分配新的 offer_id，同样记进 offer_book，这样 reserve 时可以直接使用。
+- `admissible` 改为"至少有一个 plan"。scheduling agent 可以直接选一个 plan，也可以自己拼组合；自己拼的组合仍由 reserve 时的原子检查兜底。
+
+至于每个 plan 内部的贪心按什么标准挑（完成最早，还是占用带宽最少），以及第一层按什么展开，属于 offer 生成策略，可以和 PLAN 里"跨路径去重、offer 数量稳定"那条一起定。
