@@ -98,7 +98,7 @@ class Offer(Msg):
     rate_profile: list[RateSegment]                   # sorted by time, non-overlapping; gaps are allowed
     predicted_finish_p50: AwareDatetime
     predicted_finish_p95: AwareDatetime
-    blocked_by: Literal["own_commitment", "foreign_traffic"] | None = None  # why no better offer was given
+    blocked_by: Literal["own_commitment", "background_traffic"] | None = None  # why no better offer was given
 
     @property
     def start(self) -> datetime:
@@ -191,7 +191,8 @@ class EndpointBinding(Msg):
     src_uri: str
     dst_uri: str
     vlan: int
-    interface: str
+    interface: str | None = None                      # host NIC; SENSE only returns the VLAN, so this comes from
+                                                      # site configuration (None until one supplies it)
 
     @model_validator(mode="after")
     def _vlan_range(self):
@@ -231,7 +232,7 @@ class LinkSample(Msg):
     subscribes to link state and capacity).
 
     Semantics of ``available_gbps``: the capacity available **when our own bookings are not counted**
-    (= capacity − foreign traffic / others' reservations), i.e. the ledger's observed. The ledger
+    (= capacity − background traffic / others' reservations), i.e. the ledger's observed. The ledger
     computes available = observed − own from it; if a data source's number already has our own
     bookings deducted, that source's adapter must add them back, or they would be deducted twice.
 

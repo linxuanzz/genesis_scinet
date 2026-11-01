@@ -48,6 +48,12 @@ def test_commit_ack_roundtrip_json():
     assert CommitAck.model_validate_json(ack.model_dump_json()) == ack
 
 
+def test_binding_interface_is_optional():
+    """SENSE only gives the VLAN; the NIC name comes from site configuration and may be missing."""
+    b = EndpointBinding(transfer_id="T1", src_uri="urn:anl", dst_uri="urn:ornl", vlan=3001)
+    assert b.interface is None
+
+
 # ── invalid messages are rejected ─────────────────────────────────────────
 
 @pytest.mark.parametrize("make", [

@@ -139,7 +139,7 @@ def test_insufficient_is_atomic_and_located(ledger):
     """ALT's second hop L4 has only 40; asking for 50 fails, names L4 and the external capacity limit, and writes nothing on L1."""
     with pytest.raises(InsufficientCapacity) as e:
         ledger.pending("b1", ALT, seg(9, 0, 9, 30, 50))
-    assert (e.value.link_id, e.value.blocked_by) == (L4, "foreign_traffic")
+    assert (e.value.link_id, e.value.blocked_by) == (L4, "background_traffic")
     assert ledger.available(ALT[0], 0) == 100
 
 

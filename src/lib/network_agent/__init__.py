@@ -11,13 +11,15 @@ Planned modules:
     schemas.py     inter-agent messages (TransferRequest, QuoteRequest/Response, Offer …)
     topology.py    sites, links, paths
     ledger.py      per-link, per-time-slot capacity ledger: available = observed − own
-    sim.py         simulated network (stand-in for the digital twin: foreign traffic, link outages)
+    sim.py         simulated network (stand-in for the digital twin: background traffic, link outages)
     telemetry.py   TelemetrySource interface + mock
     sense.py       SenseAdapter interface + mock (SENSE-O / NDT / Mininet are interchangeable)
     placement.py   placement search for quotes (the three offers of slide 7)
     estimate.py    RateModel: predicted finish p50 / p95 (hook for the step-9 calibration)
+    circuit.py     placement → SENSE circuit and ServiceIntent (step 5a: one new circuit per offer)
     context.py     runtime context shared by the three graphs (ledger, topology, external interfaces)
-    graphs/        protocol (graph A), runtime (graph B), learning (graph C)
+    graphs/        graph A: protocol.py (route_verb, the entry point) + quote.py, reserve.py, commit.py;
+                   runtime (graph B), learning (graph C)
 
 Conventions:
 - ``reserve`` stands for the slides' ``hold``.

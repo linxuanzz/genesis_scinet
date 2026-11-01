@@ -37,7 +37,7 @@ class InsufficientCapacity(Exception):
     offer's blocked_by and for runtime congestion localization."""
 
     def __init__(self, link_id: str, slot_start: datetime, need: float, available: float,
-                 blocked_by: Literal["own_commitment", "foreign_traffic"]):
+                 blocked_by: Literal["own_commitment", "background_traffic"]):
         self.link_id, self.slot_start, self.need, self.available, self.blocked_by = (
             link_id, slot_start, need, available, blocked_by)
         super().__init__(f"{link_id} @ {slot_start:%H:%M}: need {need} Gbps, available {available} ({blocked_by})")
@@ -143,21 +143,23 @@ class CapacityLedger:
     def pending(self, booking_id: str, path: Path, profile: list[RateSegment]) -> None:
         """Hold capacity: first check that every slot on every link along the path suffices, and write only if
         all do; if any one falls short, nothing is written."""
-        slot_gbps: dict[int, float] = {}
-        for seg in profile:
-            for i in self.slots_covering(seg.start, seg.end):
-                slot_gbps[i] = max(slot_gbps.get(i, 0.0), seg.gbps)  # adjacent segments of one booking in the same slot: take the larger, don't double count
+        self.pending_group([(booking_id, path, profile)])
+
+    def pending_group(self, items: list[tuple[str, Path, list[RateSegment]]]) -> None:
+        """Hold capacity for several bookings, all or nothing (slide 19: one hold for the whole group).
+        They are checked in order, each one seeing those before it, so two bookings that share a link
+        cannot both take its last free capacity; if any one falls short, nothing is written."""
+        plans = [(booking_id, path, self._slot_gbps(profile)) for booking_id, path, profile in items]
         with self._lock:
-            if booking_id in self._bookings:
-                raise ValueError(f"booking {booking_id!r} already exists")
-            for link in path:
-                for i, need in slot_gbps.items():
-                    avail = self.available(link, i)
-                    if need > avail + EPS_GBPS:
-                        # enough without our own bookings → blocked by our own commitments; otherwise by foreign traffic
-                        blocked = "own_commitment" if self.observed(link, i).gbps + EPS_GBPS >= need else "foreign_traffic"
-                        raise InsufficientCapacity(link, self.slot_start(i), need, avail, blocked)
-            self._bookings[booking_id] = Booking(booking_id, path, slot_gbps)
+            written: list[str] = []
+            try:
+                for booking_id, path, slot_gbps in plans:
+                    self._check_and_write(booking_id, path, slot_gbps)
+                    written.append(booking_id)
+            except Exception:
+                for booking_id in written:
+                    del self._bookings[booking_id]
+                raise
 
     def confirm(self, booking_id: str) -> None:
         with self._lock:
@@ -174,6 +176,26 @@ class CapacityLedger:
         with self._lock:
             self._require(booking_id, "confirmed")
             del self._bookings[booking_id]
+
+    def _slot_gbps(self, profile: list[RateSegment]) -> dict[int, float]:
+        slot_gbps: dict[int, float] = {}
+        for seg in profile:
+            for i in self.slots_covering(seg.start, seg.end):
+                slot_gbps[i] = max(slot_gbps.get(i, 0.0), seg.gbps)  # adjacent segments of one booking in the same slot: take the larger, don't double count
+        return slot_gbps
+
+    def _check_and_write(self, booking_id: str, path: Path, slot_gbps: dict[int, float]) -> None:
+        """Caller holds the lock."""
+        if booking_id in self._bookings:
+            raise ValueError(f"booking {booking_id!r} already exists")
+        for link in path:
+            for i, need in slot_gbps.items():
+                avail = self.available(link, i)
+                if need > avail + EPS_GBPS:
+                    # enough without our own bookings → blocked by our own commitments; otherwise by background traffic
+                    blocked = "own_commitment" if self.observed(link, i).gbps + EPS_GBPS >= need else "background_traffic"
+                    raise InsufficientCapacity(link, self.slot_start(i), need, avail, blocked)
+        self._bookings[booking_id] = Booking(booking_id, path, slot_gbps)
 
     def _require(self, booking_id: str, state: str) -> Booking:
         b = self._bookings.get(booking_id)

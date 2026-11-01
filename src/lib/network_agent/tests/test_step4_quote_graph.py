@@ -10,37 +10,9 @@ from datetime import timedelta
 
 import pytest
 
-from ..config import load_config
-from ..context import AgentContext
-from ..estimate import IdealRateModel
-from ..graphs.protocol import build_quote_graph
-from ..ledger import CapacityLedger
-from ..schemas import QuoteRequest, RateSegment, TimeWindow, TransferRequest
-from ..sim import MockNetwork
-from ..telemetry import MockTelemetry
-from ..topology import Topology
-from .helpers import CFG, DST, L2, MAIN, SRC, TOPO, t
-
-
-class CountingTelemetry(MockTelemetry):
-    calls = 0
-
-    def link_samples(self, *args, **kwargs):
-        self.calls += 1
-        return super().link_samples(*args, **kwargs)
-
-
-def make_net(foreign_gbps=60):
-    """The slide-7 network: before 12:00 others use foreign_gbps on L2 (default 60, leaving 40 Gbps)."""
-    n = MockNetwork(Topology.from_dict(TOPO))
-    n.add_foreign(L2, t(9), t(12), foreign_gbps)
-    return n
-
-
-def make_ctx(net):
-    cfg = load_config(CFG)
-    return AgentContext(cfg=cfg, topology=net.topology, ledger=CapacityLedger(net.topology, cfg, origin=t(9)),
-                        telemetry=CountingTelemetry(net, validity_seconds=300), rate_model=IdealRateModel())
+from ..graphs.quote import build_quote_graph
+from ..schemas import QuoteRequest, RateSegment
+from .helpers import L2, MAIN, make_ctx, make_net, quote, t, tr
 
 
 @pytest.fixture
@@ -56,17 +28,6 @@ def ctx(net):
 @pytest.fixture
 def graph():
     return build_quote_graph()
-
-
-def tr(id="T1", src=SRC, dst=DST, nbytes=50 * 10**12, window=(t(9), t(15)), **over):
-    return TransferRequest(id=id, workflow_id="WF-1", priority=1, src=src, dst=dst, bytes=nbytes,
-                           is_estimate=False, divisible=False,
-                           window=TimeWindow(earliest_start=window[0], latest_finish=window[1]), **over)
-
-
-def quote(graph, ctx, *transfers, mode="all_or_nothing", now=t(9)):
-    raw = QuoteRequest(quote_id="q1", bundle=list(transfers), mode=mode).model_dump()
-    return graph.invoke({"raw": raw, "now": now}, context=ctx)
 
 
 def summary(offer):
@@ -85,14 +46,16 @@ def test_slide7_three_offers(graph, ctx):
         (t(12), 100, t(13, 6) + timedelta(seconds=40)),
         (t(9), 20, t(14, 33) + timedelta(seconds=20)),
     ]
-    assert [o.blocked_by for o in offers] == ["foreign_traffic", None, None]
+    assert [o.blocked_by for o in offers] == ["background_traffic", None, None]
     assert [o.offer_id for o in offers] == ["q1/T1/1", "q1/T1/2", "q1/T1/3"]
 
 
 def test_offers_are_kept_for_reserve(graph, ctx):
     quote(graph, ctx, tr())
     assert set(ctx.offer_book) == {"q1/T1/1", "q1/T1/2", "q1/T1/3"}
-    assert ctx.offer_book["q1/T1/2"].path == MAIN
+    kept = ctx.offer_book["q1/T1/2"]
+    assert (kept.quote_id, kept.placement.path) == ("q1", MAIN)
+    assert kept.request == tr()                   # the original request, for the commitment's workflow_id
 
 
 # ── refresh_if_stale ─────────────────────────────────────────────────────
@@ -119,8 +82,8 @@ def test_quote_is_read_only(graph, ctx):
 # ── blocked_by: blocked by our own bookings ───────────────────────────────
 
 def test_blocked_by_own_commitment(net, graph, ctx):
-    """Remove foreign traffic and book 30 ourselves on the main path instead: the earliest start can only get 70, because of own_commitment."""
-    net._foreign[L2].clear()
+    """Remove background traffic and book 30 ourselves on the main path instead: the earliest start can only get 70, because of own_commitment."""
+    net._background[L2].clear()
     ctx.ledger.pending("ours", MAIN, [RateSegment(start=t(9), end=t(12), gbps=30)])
     first = quote(graph, ctx, tr())["response"].results[0].offers[0]
     assert (first.rate_profile[0].gbps, first.blocked_by) == (70, "own_commitment")
@@ -175,9 +138,9 @@ def test_graph_shape(graph):
 # scenarios: test1 / test2 / test3
 
 SCENARIOS = {
-    "test1": ("Slide 7 as drawn: foreign traffic takes 60 Gbps on L2 until 12:00; deadline 15:00", dict(foreign_gbps=60, deadline=t(15))),
-    "test2": ("Variant 1: foreign traffic takes only 20 Gbps (80 Gbps left until 12:00)", dict(foreign_gbps=20, deadline=t(15))),
-    "test3": ("Variant 2: deadline moved up to 13:00", dict(foreign_gbps=60, deadline=t(13))),
+    "test1": ("Slide 7 as drawn: background traffic takes 60 Gbps on L2 until 12:00; deadline 15:00", dict(background_gbps=60, deadline=t(15))),
+    "test2": ("Variant 1: background traffic takes only 20 Gbps (80 Gbps left until 12:00)", dict(background_gbps=20, deadline=t(15))),
+    "test3": ("Variant 2: deadline moved up to 13:00", dict(background_gbps=60, deadline=t(13))),
 }
 
 
@@ -210,8 +173,8 @@ def print_scenario(title, net, ctx, req, now, out):
         if d.link_id not in printed:
             printed.add(d.link_id)
             print(f"  {d.link_id}: {d.src} — {d.dst}   {d.capacity_gbps:g} Gbps")
-    print("Foreign traffic:")
-    for link, ivs in net._foreign.items():
+    print("Background traffic:")
+    for link, ivs in net._background.items():
         for iv in ivs:
             print(f"  {link}   {iv.start:%H:%M}–{iv.end:%H:%M}   {iv.gbps:g} Gbps")
     print("Outages:", [f"{link} {iv.start:%H:%M}–{iv.end:%H:%M}" for link, ivs in net._outages.items() for iv in ivs] or "none")
@@ -239,13 +202,13 @@ def print_scenario(title, net, ctx, req, now, out):
         if r.status != "feasible":
             print(f"  {r.transfer_id}: {r.status} ({r.reason.cause}: {r.reason.detail})")
         for o in r.offers:
-            s, p = o.rate_profile[0], ctx.offer_book[o.offer_id]   # offer_book holds the path and rule that are not exposed externally
+            s, p = o.rate_profile[0], ctx.offer_book[o.offer_id].placement   # the path and rule are not exposed externally
             print(f"  {o.offer_id}: start {s.start:%H:%M} @ {s.gbps:>5g} Gbps → finish {o.predicted_finish_p50:%H:%M:%S}"
                   f"   [path{path_no[p.path]}, rule {p.strategy}]   blocked_by={o.blocked_by}")
 
 
-def demo(title=SCENARIOS["test1"][0], foreign_gbps=60, deadline=t(15)):
-    net = make_net(foreign_gbps)
+def demo(title=SCENARIOS["test1"][0], background_gbps=60, deadline=t(15)):
+    net = make_net(background_gbps)
     ctx = make_ctx(net)
     transfer = tr(window=(t(9), deadline))
     out = quote(build_quote_graph(), ctx, transfer)

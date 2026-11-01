@@ -19,14 +19,14 @@ from datetime import datetime, timedelta
 from typing import Literal
 
 from .ledger import EPS_GBPS, CapacityLedger
-from .schemas import RejectReason, TransferRequest
+from .schemas import RateSegment, RejectReason, TransferRequest
 from .topology import Path
 
 BITS_PER_BYTE = 8
 BITS_PER_GBIT = 1e9
 
 Strategy = Literal["earliest_start", "max_rate", "min_rate"]
-BlockedBy = Literal["own_commitment", "foreign_traffic"]
+BlockedBy = Literal["own_commitment", "background_traffic"]
 
 
 @dataclass(frozen=True)
@@ -37,7 +37,11 @@ class Placement:
     end: datetime
     gbps: float
     strategy: Strategy
-    blocked_by: BlockedBy | None    # why the rate could not be higher: our own bookings or foreign traffic
+    blocked_by: BlockedBy | None    # why the rate could not be higher: our own bookings or background traffic
+
+    @property
+    def rate_profile(self) -> list[RateSegment]:
+        return [RateSegment(start=self.start, end=self.end, gbps=self.gbps)]
 
 
 def dedupe(placements: list[Placement]) -> list[Placement]:
@@ -98,7 +102,7 @@ def search(ledger: CapacityLedger, path: Path, req: TransferRequest, now: dateti
         if gbps >= rates[-1]:
             return None                     # already the path's top rate step, so not blocked
         free = _max_rate_at(ledger, path, req.bytes, start, deadline, rates, ignore_own=True)
-        return "own_commitment" if free and free > gbps else "foreign_traffic"
+        return "own_commitment" if free and free > gbps else "background_traffic"
 
     def make(start: datetime, gbps: float, strategy: Strategy, b: BlockedBy | None) -> Placement:
         return Placement(req.id, path, start, start + duration(req.bytes, gbps), gbps, strategy, b)

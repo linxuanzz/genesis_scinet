@@ -93,8 +93,8 @@ def test_vlan_pool_and_reuse(sense):
 
 # ── admission against the simulated network ───────────────────────────────
 
-def test_admission_sees_foreign_traffic(net, sense):
-    net.add_foreign(L2, t(9, 30), t(10), 40)                  # occupies only the second half, still counts
+def test_admission_sees_background_traffic(net, sense):
+    net.add_background(L2, t(9, 30), t(10), 40)               # occupies only the second half, still counts
     with pytest.raises(SenseError) as e:
         sense.propagate(intent(70_000), now=t(8))
     assert e.value.reason == "insufficient_capacity"

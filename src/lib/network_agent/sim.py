@@ -5,8 +5,8 @@ It holds the "ground truth": the topology, capacity used by others (per time ran
 reads from it and the mock SENSE (step 3b) reads and writes it, so both see the same network.
 This is the layer that gets replaced when we move to Mininet.
 
-"Foreign traffic" and "our reservations" are stored separately: SENSE admission control has to count
-both, while telemetry reports only foreign traffic (see schemas.LinkSample for the semantics); our
+"Background traffic" and "our reservations" are stored separately: SENSE admission control has to count
+both, while telemetry reports only background traffic (see schemas.LinkSample for the semantics); our
 own reservations are accounted for by the ledger's ``own``.
 """
 
@@ -26,17 +26,17 @@ class Interval:
 @dataclass
 class MockNetwork:
     topology: Topology
-    _foreign: dict[str, list[Interval]] = field(init=False)  # directed link → foreign usage
+    _background: dict[str, list[Interval]] = field(init=False)  # directed link → background usage
     _outages: dict[str, list[Interval]] = field(init=False)  # directed link → outage periods
     _ours: dict[str, tuple[Path, Interval]] = field(init=False, default_factory=dict)  # SENSE instance → (path, reservation)
 
     def __post_init__(self):
-        self._foreign = {link: [] for link in self.topology.links}
+        self._background = {link: [] for link in self.topology.links}
         self._outages = {link: [] for link in self.topology.links}
 
-    def add_foreign(self, link_id: str, start: datetime, end: datetime, gbps: float) -> None:
+    def add_background(self, link_id: str, start: datetime, end: datetime, gbps: float) -> None:
         """Others use gbps of capacity in one direction over [start, end)."""
-        self._foreign[link_id].append(Interval(start, end, gbps))
+        self._background[link_id].append(Interval(start, end, gbps))
 
     def add_outage(self, physical_link_id: str, start: datetime, end: datetime) -> None:
         """A physical link goes down (e.g. a fiber cut): both directions are unavailable at once."""
@@ -57,11 +57,11 @@ class MockNetwork:
                  include_ours: bool = False) -> list[tuple[datetime, datetime, bool, float]]:
         """Split [start, end) into segments with unchanged state, each as (start, end, is up, available capacity).
 
-        include_ours=False (telemetry semantics): available = capacity − foreign usage.
+        include_ours=False (telemetry semantics): available = capacity − background usage.
         include_ours=True  (SENSE admission semantics): additionally subtract our SENSE reservations.
         """
         cap = self.topology.links[link_id].capacity_gbps
-        used = list(self._foreign[link_id])
+        used = list(self._background[link_id])
         if include_ours:
             used += [iv for path, iv in self._ours.values() if link_id in path]
         events = used + self._outages[link_id]

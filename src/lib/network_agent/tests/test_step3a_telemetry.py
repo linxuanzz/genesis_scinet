@@ -47,14 +47,14 @@ def test_bad_sample(over):
 
 # ── simulated network → telemetry ─────────────────────────────────────────
 
-def test_foreign_traffic_splits_segments(net, tele):
-    net.add_foreign(L2, t(9, 45), t(10, 30), 40)
+def test_background_traffic_splits_segments(net, tele):
+    net.add_background(L2, t(9, 45), t(10, 30), 40)
     got = [(s.start, s.end, s.available_gbps) for s in tele.link_samples([L2], t(9), t(11), now=t(9))]
     assert got == [(t(9), t(9, 45), 100), (t(9, 45), t(10, 30), 60), (t(10, 30), t(11), 100)]
 
 
-def test_foreign_is_per_direction(net, tele):
-    net.add_foreign(L2, t(9), t(10), 40)
+def test_background_is_per_direction(net, tele):
+    net.add_background(L2, t(9), t(10), 40)
     assert tele.link_samples([L2_BACK], t(9), t(10), now=t(9))[0].available_gbps == 100
 
 
@@ -98,7 +98,7 @@ def test_apply_clips_to_horizon(ledger):
 
 def test_end_to_end_no_double_counting(net, tele, ledger):
     """Others use 40 (goes into observed), we book 30 (goes into own): available = 100 − 40 − 30 = 30, each counted once."""
-    net.add_foreign(L2, t(9), t(10), 40)
+    net.add_background(L2, t(9), t(10), 40)
     ledger.apply(tele.link_samples(list(MAIN), t(9), t(10), now=t(9)))
     ledger.pending("b1", MAIN, [RateSegment(start=t(9), end=t(9, 30), gbps=30)])
     assert (ledger.observed(L2, 0).gbps, ledger.own(L2, 0), ledger.available(L2, 0)) == (60, 30, 30)
