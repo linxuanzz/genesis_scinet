@@ -16,9 +16,9 @@ the ledger debits them together, and if SENSE refuses any one, the instances alr
 cancelled and every booking is rolled back.
 
 Each offer gets its own circuit, i.e. one ServiceIntent and one SENSE instance (see circuit.py). The
-debit happens here, not at commit, so that the very next quote already sees it; commit only confirms.
+debit happens here, not at commit, so that the very next query already sees it; commit only confirms.
 
-An offer can only be reserved within its quote's validity. A reservation past its expires_at is
+An offer can only be reserved within its query's validity. A reservation past its expires_at is
 reclaimed by the expiry sweep (reclaim.py), as are instances a rollback failed to cancel: those keep
 their bookings until then, since the network still carries them. A resent request_id is answered from
 graph A's cache (protocol.py); this branch alone does not recognize it.
@@ -31,7 +31,7 @@ from langgraph.graph import END, START, StateGraph
 from langgraph.runtime import Runtime
 
 from ..circuit import compile_intent, place_on_circuit
-from ..context import AgentContext, QuotedOffer, Reservation, ReservedOffer
+from ..context import AgentContext, QueriedOffer, Reservation, ReservedOffer
 from ..ledger import InsufficientCapacity
 from ..placement import Placement
 from ..schemas import ErrorResponse, ReserveAck, ReserveRequest, ServiceIntent, ServiceState
@@ -45,7 +45,7 @@ class ReserveState(TypedDict, total=False):
     now: datetime                                 # input: current time
     request: ReserveRequest                       # written by validate_reserve
     reserve_id: str                               # written by validate_reserve
-    quoted: dict[str, QuotedOffer]                # written by validate_reserve: offer_id → what was quoted, in request order
+    queried: dict[str, QueriedOffer]              # written by validate_reserve: offer_id → query result, in request order
     refreshed: list[str]                          # written by recheck_capacity: links refreshed this time
     chosen: dict[str, Placement]                  # written by place_on_circuit: offer_id → placement to book
     intents: dict[str, ServiceIntent]             # written by compile_intent
@@ -58,7 +58,7 @@ class ReserveState(TypedDict, total=False):
 # ── nodes ────────────────────────────────────────────────────────────────
 
 def validate_reserve(state: ReserveState, runtime: Runtime[AgentContext]) -> dict:
-    """Check the request against what we quoted and what is already reserved. Nothing is written yet."""
+    """Check the request against the query results and what is already reserved. Nothing is written yet."""
     ctx, req = runtime.context, parse_request(ReserveRequest, state["raw"])
     if isinstance(req, ErrorResponse):
         return {"error": req}
@@ -67,49 +67,49 @@ def validate_reserve(state: ReserveState, runtime: Runtime[AgentContext]) -> dic
         return {"request": req, "error": ErrorResponse(request_id=req.request_id, code=code, detail=detail)}
 
     unknown = [o for o in req.offer_ids if o not in ctx.offer_book]
-    if unknown and req.quote_id in ctx.expired_quotes:
-        return fail("expired", f"quote {req.quote_id} has expired; its offers were dropped")
+    if unknown and req.query_id in ctx.expired_queries:
+        return fail("expired", f"query {req.query_id} has expired; its offers were dropped")
     if unknown:
         return fail("not_found", f"unknown offers: {unknown}")
-    quoted = {o: ctx.offer_book[o] for o in req.offer_ids}
-    stale = [o for o, q in quoted.items() if state["now"] >= q.expires_at]
+    queried = {o: ctx.offer_book[o] for o in req.offer_ids}
+    stale = [o for o, q in queried.items() if state["now"] >= q.expires_at]
     if stale:
-        return fail("expired", f"offers whose quote expired at {quoted[stale[0]].expires_at:%H:%M:%S}: {stale}")
-    other_quote = [o for o, q in quoted.items() if q.quote_id != req.quote_id]
-    if other_quote:
-        return fail("invalid_request", f"offers not from quote {req.quote_id}: {other_quote}")
-    transfers = [q.request.id for q in quoted.values()]
+        return fail("expired", f"offers whose query expired at {queried[stale[0]].expires_at:%H:%M:%S}: {stale}")
+    other_query = [o for o, q in queried.items() if q.query_id != req.query_id]
+    if other_query:
+        return fail("invalid_request", f"offers not from query {req.query_id}: {other_query}")
+    transfers = [q.request.id for q in queried.values()]
     twice = sorted({tid for tid in transfers if transfers.count(tid) > 1})
     if twice:
         return fail("invalid_request", f"more than one offer for transfers {twice}")
-    taken = sorted(item.offer_id for r in ctx.reservations.values() for item in r.held if item.offer_id in quoted)
+    taken = sorted(item.offer_id for r in ctx.reservations.values() for item in r.held if item.offer_id in queried)
     if taken:
         return fail("conflict", f"offers already reserved: {taken}")
-    over = [o for o, q in quoted.items() if q.placement.end <= state["now"]]
+    over = [o for o, q in queried.items() if q.placement.end <= state["now"]]
     if over:
         return fail("expired", f"offers whose time range has already passed: {over}")
-    return {"request": req, "quoted": quoted, "reserve_id": ctx.new_id("rsv")}
+    return {"request": req, "queried": queried, "reserve_id": ctx.new_id("rsv")}
 
 
 def recheck_capacity(state: ReserveState, runtime: Runtime[AgentContext]) -> dict:
     """Refresh stale observations on the offers' paths, so that the debit below is checked against current
-    numbers rather than those seen at quote time. The check itself is ledger_pending's atomic
+    numbers rather than those seen at query time. The check itself is ledger_pending's atomic
     check-then-write, which also covers offers in the group that share a link."""
     ctx = runtime.context
-    spans = [(q.placement.path, q.placement.start, q.placement.end) for q in state["quoted"].values()]
+    spans = [(q.placement.path, q.placement.start, q.placement.end) for q in state["queried"].values()]
     return {"refreshed": refresh_stale(ctx.ledger, ctx.telemetry, spans, state["now"])}
 
 
 def place_on_circuit_node(state: ReserveState) -> dict:
-    """Decide which circuit carries each offer. Step 5a: a new circuit per offer, on the quoted path.
+    """Decide which circuit carries each offer. Step 5a: a new circuit per offer, on the offered path.
     Extension hooks (warm-circuit reuse, alternate path, priority / preemption): see circuit.place_on_circuit."""
-    return {"chosen": {o: place_on_circuit(q.placement) for o, q in state["quoted"].items()}}
+    return {"chosen": {o: place_on_circuit(q.placement) for o, q in state["queried"].items()}}
 
 
 def compile_intent_node(state: ReserveState) -> dict:
     """One ServiceIntent per offer; the alias ties the SENSE instance back to this reservation."""
     rid = state["reserve_id"]
-    return {"intents": {o: compile_intent(p, state["quoted"][o].request.src, state["quoted"][o].request.dst,
+    return {"intents": {o: compile_intent(p, state["queried"][o].request.src, state["queried"][o].request.dst,
                                           alias=f"{rid}/{o}")
                         for o, p in state["chosen"].items()}}
 
@@ -162,11 +162,11 @@ def record_reserve(state: ReserveState, runtime: Runtime[AgentContext]) -> dict:
     """Write the reservation into the context, with its expiry."""
     ctx, req, rid = runtime.context, state["request"], state["reserve_id"]
     ttl = req.ttl_seconds or ctx.cfg.reserve_ttl_seconds
-    items = [ReservedOffer(offer_id=o, request=state["quoted"][o].request, placement=state["chosen"][o],
+    items = [ReservedOffer(offer_id=o, request=state["queried"][o].request, placement=state["chosen"][o],
                            booking_id=state["bookings"][o], intent=state["intents"][o],
                            instance_id=s.instance_id, vlan=s.vlan)
              for o, s in state["instances"].items()]
-    ctx.reservations[rid] = Reservation(reserve_id=rid, quote_id=req.quote_id, items=items,
+    ctx.reservations[rid] = Reservation(reserve_id=rid, query_id=req.query_id, items=items,
                                         expires_at=state["now"] + timedelta(seconds=ttl))
     return {}
 

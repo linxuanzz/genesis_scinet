@@ -8,18 +8,18 @@ the logic lives in ordinary modules so that other graphs or other agents can reu
 Planned modules:
 
     config.py      parameters (all from config files; no magic numbers in code)
-    schemas.py     inter-agent messages (TransferRequest, QuoteRequest/Response, Offer …)
+    schemas.py     inter-agent messages (TransferRequest, QueryRequest/Response, Offer …)
     topology.py    sites, links, paths
     ledger.py      per-link, per-time-slot capacity ledger: available = observed − own
     sim.py         simulated network (stand-in for the digital twin: background traffic, link outages)
     telemetry.py   TelemetrySource interface + mock
     sense.py       SenseAdapter interface + mock (SENSE-O / NDT / Mininet are interchangeable)
-    placement.py   placement search for quotes (the three offers of slide 7)
+    placement.py   placement search for queries (the three offers of slide 7)
     estimate.py    RateModel: predicted finish p50 / p95 (hook for the step-9 calibration)
     circuit.py     placement → SENSE circuit and ServiceIntent (step 5a: one new circuit per offer)
     context.py     runtime context shared by the three graphs (ledger, topology, external interfaces)
     reclaim.py     giving back what we hold: shared by release and the expiry sweep
-    graphs/        graph A: protocol.py (the entry point: dedupe, sweep, route, remember) + quote.py, reserve.py, commit.py,
+    graphs/        graph A: protocol.py (the entry point: dedupe, sweep, route, remember) + query.py, reserve.py, commit.py,
                    release.py, modify.py;
                    runtime (graph B), learning (graph C)
 

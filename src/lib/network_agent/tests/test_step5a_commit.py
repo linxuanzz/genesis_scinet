@@ -1,6 +1,6 @@
 """Step 5a: the commit branch of graph A, and graph A as a whole (route_verb + three branches).
 
-Starts from the same quoted agent as the reserve tests (helpers.make_quoted_ctx); TTL is 60 s, so a
+Starts from the same queried agent as the reserve tests (helpers.make_queried_ctx); TTL is 60 s, so a
 reservation made at 09:00 must be committed before 09:01.
 """
 
@@ -10,11 +10,11 @@ import pytest
 
 from ..graphs.protocol import build_protocol_graph
 from ..schemas import (
-    CommitAck, CommitRequest, EndpointBinding, ErrorResponse, QuoteRequest, QuoteResponse, RateSegment, ReserveAck,
+    CommitAck, CommitRequest, EndpointBinding, ErrorResponse, QueryRequest, QueryResponse, RateSegment, ReserveAck,
     ReserveRequest,
 )
 from ..sense import SenseError
-from .helpers import DST, MAIN, SRC, commit, make_ctx, make_net, make_quoted_ctx, reserve, t, tr
+from .helpers import DST, MAIN, SRC, commit, make_ctx, make_net, make_queried_ctx, reserve, t, tr
 
 
 @pytest.fixture
@@ -24,7 +24,7 @@ def net():
 
 @pytest.fixture
 def ctx(net):
-    return make_quoted_ctx(net)
+    return make_queried_ctx(net)
 
 
 # ── success ───────────────────────────────────────────────────────────────
@@ -118,18 +118,18 @@ def test_retry_after_partial_commit(monkeypatch, ctx):
 
 # ── graph A as a whole ────────────────────────────────────────────────────
 
-def test_one_graph_quote_reserve_commit(net):
+def test_one_graph_query_reserve_commit(net):
     """The scheduling agent's view: three messages into the same graph, each routed by its verb."""
     ctx, graph = make_ctx(net), build_protocol_graph()
 
     def send(verb, msg, now=t(9)):
         return graph.invoke({"verb": verb, "raw": msg.model_dump(), "now": now}, context=ctx)
 
-    q = send("quote", QuoteRequest(quote_id="q1", bundle=[tr()], mode="all_or_nothing"))
-    assert isinstance(q["response"], QuoteResponse)
+    q = send("query", QueryRequest(query_id="q1", bundle=[tr()], mode="all_or_nothing"))
+    assert isinstance(q["response"], QueryResponse)
     assert set(q) == {"verb", "raw", "now", "swept", "response"}   # branch-internal fields stay inside the branch
 
-    r = send("reserve", ReserveRequest(request_id="r1", quote_id="q1", offer_ids=["q1/T1/2"]))
+    r = send("reserve", ReserveRequest(request_id="r1", query_id="q1", offer_ids=["q1/T1/2"]))
     assert isinstance(r["response"], ReserveAck)
 
     c = send("commit", CommitRequest(request_id="c1", reserve_id=r["response"].reserve_id))

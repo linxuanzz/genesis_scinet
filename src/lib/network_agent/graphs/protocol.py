@@ -8,7 +8,7 @@ the cache; ``sweep_expired`` reclaims whatever has expired (reclaim.py), so no b
     START → dedupe_request ─ seen ─► END (the cached reply, or invalid_request if the body differs)
               │ new
               ▼
-            sweep_expired → route_verb ─ quote   → quote.py    (step 4)   offers, nothing reserved
+            sweep_expired → route_verb ─ query   → query.py    (step 4)   offers, nothing reserved
                                      ├ reserve → reserve.py  (step 5a)  debit the ledger, SENSE propagate
                                      ├ commit  → commit.py   (step 5a)  SENSE commit, confirm the ledger
                                      ├ release → release.py  (step 5b)  SENSE cancel, give back the bookings
@@ -16,7 +16,7 @@ the cache; ``sweep_expired`` reclaims whatever has expired (reclaim.py), so no b
                                      └ unknown verb → END with an error
             (every branch) → remember_response → END
 
-Idempotency: a request is identified by (verb, request_id), or (quote, quote_id). A resend with the same
+Idempotency: a request is identified by (verb, request_id), or (query, query_id). A resend with the same
 body gets the cached reply and runs nothing, so a scheduling agent that lost a reply can simply send
 again. Only successful replies are cached: after a failure, resending the same id retries for real.
 Reusing an id for a different body is refused. Known gap: the cache is kept for the agent's lifetime;
@@ -42,20 +42,20 @@ from pydantic import BaseModel, ValidationError
 
 from ..context import AgentContext, Answered
 from ..reclaim import SweepReport, sweep_expired
-from ..schemas import (CommitAck, CommitRequest, ErrorResponse, ModifyAck, ModifyRequest, QuoteRequest,
-                       QuoteResponse, ReleaseAck, ReleaseRequest, ReserveAck, ReserveRequest)
+from ..schemas import (CommitAck, CommitRequest, ErrorResponse, ModifyAck, ModifyRequest, QueryRequest,
+                       QueryResponse, ReleaseAck, ReleaseRequest, ReserveAck, ReserveRequest)
 from .commit import build_commit_graph
 from .modify import build_modify_graph
-from .quote import build_quote_graph
+from .query import build_query_graph
 from .release import build_release_graph
 from .reserve import build_reserve_graph
 
 
-Verb = Literal["quote", "reserve", "commit", "release", "modify"]
+Verb = Literal["query", "reserve", "commit", "release", "modify"]
 
 # verb → (request model, the field that identifies a request)
 REQUESTS: dict[str, tuple[type[BaseModel], str]] = {
-    "quote": (QuoteRequest, "quote_id"),
+    "query": (QueryRequest, "query_id"),
     "reserve": (ReserveRequest, "request_id"),
     "commit": (CommitRequest, "request_id"),
     "release": (ReleaseRequest, "request_id"),
@@ -71,7 +71,7 @@ class ProtocolState(TypedDict, total=False):
     now: datetime                                 # input
     replayed: bool                                # written by dedupe_request: the reply comes from the cache
     swept: SweepReport                            # written by sweep_expired
-    response: QuoteResponse | ReserveAck | CommitAck | ReleaseAck | ModifyAck | ErrorResponse   # output
+    response: QueryResponse | ReserveAck | CommitAck | ReleaseAck | ModifyAck | ErrorResponse   # output
 
 
 def _identify(state: ProtocolState) -> tuple[tuple[str, str], BaseModel] | None:
@@ -116,7 +116,7 @@ def route_verb(state: ProtocolState) -> dict:
     if verb in get_args(Verb):
         return {}
     raw = state.get("raw")
-    request_id = (raw.get("request_id") or raw.get("quote_id")) if isinstance(raw, dict) else None
+    request_id = (raw.get("request_id") or raw.get("query_id")) if isinstance(raw, dict) else None
     return {"response": ErrorResponse(request_id=str(request_id or "unknown"), code="invalid_request",
                                       detail=f"unknown verb {verb!r}; expected one of {list(get_args(Verb))}")}
 
@@ -139,7 +139,7 @@ def build_protocol_graph():
     g.add_node("dedupe_request", dedupe_request)
     g.add_node("sweep_expired", sweep_expired_node)
     g.add_node("route_verb", route_verb)
-    g.add_node("quote", build_quote_graph())
+    g.add_node("query", build_query_graph())
     g.add_node("reserve", build_reserve_graph())
     g.add_node("commit", build_commit_graph())
     g.add_node("release", build_release_graph())

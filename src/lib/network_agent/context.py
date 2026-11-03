@@ -1,18 +1,18 @@
 """Runtime environment shared by the three graphs (the LangGraph runtime context).
 
 A graph's state only records the work of "this one execution". Long-lived objects shared by all
-requests — the ledger, the topology, external interfaces, and the books of what we have quoted,
-reserved and committed — live in the context instead: the caller builds it once and passes it on
+requests — the ledger, the topology, external interfaces, and the books of query results,
+reservations and commitments — live in the context instead: the caller builds it once and passes it on
 every invoke (by design, the ledger stays out of state).
 
 The three books form a chain, each entry pointing back to the previous one by id:
 
-    offer_book     offer_id      → QuotedOffer   written by quote's respond, dropped once the quote expires (step 5b)
+    offer_book     offer_id      → QueriedOffer  written by query's respond, dropped once the query expires (step 5b)
     reservations   reserve_id    → Reservation   written by reserve (step 5a)
     commitments    commitment_id → Commitment    written by commit (step 5a), dropped by release (step 5b)
 
 Two smaller books serve the expiry sweep (reclaim.py): ``orphans``, SENSE instances that a failed reserve
-could not cancel, and ``expired_quotes``, so that a reserve against a dropped quote is told it expired.
+could not cancel, and ``expired_queries``, so that a reserve against a dropped query is told it expired.
 ``answered`` caches successful replies so that graph A can answer a resent request (step 5b).
 """
 
@@ -34,14 +34,14 @@ from .topology import Topology
 
 
 @dataclass(frozen=True)
-class QuotedOffer:
-    """What we remember about an offer we quoted. The scheduling agent only sees the Offer; the request it
+class QueriedOffer:
+    """What we remember about an offer returned by a query. The scheduling agent only sees the Offer; the request it
     answers (needed later for the commitment's workflow_id) and the placement behind it (path, rule) stay here."""
 
-    quote_id: str
+    query_id: str
     request: TransferRequest
     placement: Placement
-    expires_at: datetime                              # the quote's valid_until; reserve refuses the offer after this
+    expires_at: datetime                              # the query's valid_until; reserve refuses the offer after this
 
 
 @dataclass(frozen=True)
@@ -49,8 +49,8 @@ class ReservedOffer:
     """One offer inside a reservation: the ledger booking and the SENSE instance that hold it."""
 
     offer_id: str
-    request: TransferRequest                          # the transfer it serves (offer_book may drop the quote before commit)
-    placement: Placement                              # what was actually booked (may differ from the quote once
+    request: TransferRequest                          # the transfer it serves (offer_book may drop the query before commit)
+    placement: Placement                              # what was actually booked (may differ from the query once
                                                       # the alternate-path hook exists); gives the commitment's rate
     booking_id: str                                   # ledger booking; pending until commit
     intent: ServiceIntent                             # what was sent to SENSE; its terminals become the EndpointBinding
@@ -63,7 +63,7 @@ class Reservation:
     """A reserve of one or more offers, committed or released as a whole (slide 19: one hold for the whole group)."""
 
     reserve_id: str
-    quote_id: str
+    query_id: str
     items: list[ReservedOffer]
     expires_at: datetime                              # an uncommitted reservation is void after this
     state: Literal["reserved", "committed", "released", "expired"] = "reserved"   # released / expired: every item
@@ -103,11 +103,11 @@ class AgentContext:
     telemetry: TelemetrySource
     sense: SenseAdapter
     rate_model: RateModel
-    offer_book: dict[str, QuotedOffer] = field(default_factory=dict)
+    offer_book: dict[str, QueriedOffer] = field(default_factory=dict)
     reservations: dict[str, Reservation] = field(default_factory=dict)
     commitments: dict[str, Commitment] = field(default_factory=dict)
     orphans: dict[str, str] = field(default_factory=dict)            # instance_id → its booking, kept until cancelled
-    expired_quotes: set[str] = field(default_factory=set)            # quote_ids whose offers were dropped
+    expired_queries: set[str] = field(default_factory=set)            # query_ids whose offers were dropped
     answered: dict[tuple[str, str], Answered] = field(default_factory=dict)   # (verb, request id) → Answered
     _seq: dict[str, Iterator[int]] = field(init=False, repr=False, default_factory=lambda: defaultdict(lambda: count(1)))
 

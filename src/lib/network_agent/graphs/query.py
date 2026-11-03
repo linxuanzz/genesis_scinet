@@ -1,12 +1,12 @@
-"""Graph A · quote branch (step 4): offers for a bundle of transfers, without reserving anything.
+"""Graph A · query branch (step 4): offers for a bundle of transfers, without reserving anything.
 
     START → validate_bundle ─ok──► refresh_if_stale → find_placements → estimate_finish → respond → END
                             └fail────────────────────────────────────────────────────────► respond
 
-A quote is read-only: it reserves no capacity and never calls SENSE. Its only write is refreshing
+A query is read-only: it reserves no capacity and never calls SENSE. Its only write is refreshing
 stale ``observed`` values in the ledger, which are observations, not bookings. Every offer is also
 remembered in offer_book, so that a later reserve can find what it refers to. The offers can be
-reserved until valid_until (now + quote_ttl_seconds); after that reserve refuses them and the expiry
+reserved until valid_until (now + query_ttl_seconds); after that reserve refuses them and the expiry
 sweep drops them from offer_book (step 5b).
 """
 
@@ -16,35 +16,35 @@ from typing import TypedDict
 from langgraph.graph import END, START, StateGraph
 from langgraph.runtime import Runtime
 
-from ..context import AgentContext, QuotedOffer
+from ..context import AgentContext, QueriedOffer
 from ..placement import Placement, dedupe, search
-from ..schemas import ErrorResponse, Offer, QuoteRequest, QuoteResponse, RejectReason, TransferQuote
+from ..schemas import ErrorResponse, Offer, QueryRequest, QueryResponse, RejectReason, TransferQuery
 from ..telemetry import refresh_stale
 from ..topology import Path
 from .common import parse_request
 
 
-class QuoteState(TypedDict, total=False):
+class QueryState(TypedDict, total=False):
     raw: dict                                     # input: the scheduling agent's request (JSON parsed into a dict)
     now: datetime                                 # input: current time, supplied by the caller (for tests and simulated clocks)
-    request: QuoteRequest                         # written by validate_bundle
+    request: QueryRequest                         # written by validate_bundle
     paths: dict[str, list[Path]]                  # written by refresh_if_stale: transfer_id → candidate paths
     refreshed: list[str]                          # written by refresh_if_stale: links refreshed this time
     placements: dict[str, list[Placement]]        # written by find_placements: feasible placements
     rejections: dict[str, RejectReason]           # written by find_placements: why a transfer is infeasible
     offers: dict[str, list[Offer]]                # written by estimate_finish
-    response: QuoteResponse | ErrorResponse       # output
+    response: QueryResponse | ErrorResponse       # output
 
 
 # ── nodes ────────────────────────────────────────────────────────────────
 
-def validate_bundle(state: QuoteState) -> dict:
+def validate_bundle(state: QueryState) -> dict:
     """Check format and internal consistency only (the rules in schemas.py); whether the request can be met is left to later nodes."""
-    req = parse_request(QuoteRequest, state["raw"], id_field="quote_id")
+    req = parse_request(QueryRequest, state["raw"], id_field="query_id")
     return {"response": req} if isinstance(req, ErrorResponse) else {"request": req}
 
 
-def refresh_if_stale(state: QuoteState, runtime: Runtime[AgentContext]) -> dict:
+def refresh_if_stale(state: QueryState, runtime: Runtime[AgentContext]) -> dict:
     """Find candidate paths for each transfer; for observations on those paths that are stale within the
     window, pull fresh samples from telemetry once and write them into the ledger."""
     ctx, now = runtime.context, state["now"]
@@ -60,7 +60,7 @@ def refresh_if_stale(state: QuoteState, runtime: Runtime[AgentContext]) -> dict:
     return {"paths": paths, "refreshed": refresh_stale(ctx.ledger, ctx.telemetry, spans, now)}
 
 
-def find_placements(state: QuoteState, runtime: Runtime[AgentContext]) -> dict:
+def find_placements(state: QueryState, runtime: Runtime[AgentContext]) -> dict:
     """Run placement.search once per transfer per candidate path; dedupe across paths, preferring shorter paths."""
     ctx = runtime.context
     placements: dict[str, list[Placement]] = {}
@@ -85,7 +85,7 @@ def find_placements(state: QuoteState, runtime: Runtime[AgentContext]) -> dict:
     return {"placements": placements, "rejections": rejections}
 
 
-def estimate_finish(state: QuoteState, runtime: Runtime[AgentContext]) -> dict:
+def estimate_finish(state: QueryState, runtime: Runtime[AgentContext]) -> dict:
     """Placement → offer: estimate p50 / p95 finish times with the rate model."""
     req = state["request"]
     nbytes = {tr.id: tr.bytes for tr in req.bundle}
@@ -95,41 +95,41 @@ def estimate_finish(state: QuoteState, runtime: Runtime[AgentContext]) -> dict:
         for k, p in enumerate(ps, start=1):
             p50, p95 = runtime.context.rate_model.predict_finish(p, nbytes[tid])
             offers[tid].append(Offer(
-                offer_id=f"{req.quote_id}/{tid}/{k}", transfer_id=tid,
+                offer_id=f"{req.query_id}/{tid}/{k}", transfer_id=tid,
                 rate_profile=p.rate_profile,
                 predicted_finish_p50=p50, predicted_finish_p95=p95, blocked_by=p.blocked_by))
     return {"offers": offers}
 
 
-def respond(state: QuoteState, runtime: Runtime[AgentContext]) -> dict:
-    """Assemble the QuoteResponse; record every offer in offer_book, so that reserve (step 5a) can look up
+def respond(state: QueryState, runtime: Runtime[AgentContext]) -> dict:
+    """Assemble the QueryResponse; record every offer in offer_book, so that reserve (step 5a) can look up
     by id the placement behind it and the request it answers."""
     if "response" in state:                       # validation failed; an ErrorResponse is already set
         return {}
     ctx, req = runtime.context, state["request"]
-    valid_until = state["now"] + timedelta(seconds=ctx.cfg.quote_ttl_seconds)
+    valid_until = state["now"] + timedelta(seconds=ctx.cfg.query_ttl_seconds)
     results = []
     for tr in req.bundle:
         if tr.id in state["offers"]:
             offers = state["offers"][tr.id]
             for offer, p in zip(offers, state["placements"][tr.id]):
-                ctx.offer_book[offer.offer_id] = QuotedOffer(req.quote_id, tr, p, valid_until)
-            results.append(TransferQuote(transfer_id=tr.id, status="feasible", offers=offers))
+                ctx.offer_book[offer.offer_id] = QueriedOffer(req.query_id, tr, p, valid_until)
+            results.append(TransferQuery(transfer_id=tr.id, status="feasible", offers=offers))
         else:
             reason = state["rejections"][tr.id]
             status = "unreachable" if reason.cause == "no_path" else "infeasible"
-            results.append(TransferQuote(transfer_id=tr.id, status=status, reason=reason))
-    return {"response": QuoteResponse(quote_id=req.quote_id, mode=req.mode, results=results, valid_until=valid_until)}
+            results.append(TransferQuery(transfer_id=tr.id, status=status, reason=reason))
+    return {"response": QueryResponse(query_id=req.query_id, mode=req.mode, results=results, valid_until=valid_until)}
 
 
 # ── edges ────────────────────────────────────────────────────────────────
 
-def after_validate(state: QuoteState) -> str:
+def after_validate(state: QueryState) -> str:
     return "respond" if "response" in state else "refresh_if_stale"
 
 
-def build_quote_graph():
-    g = StateGraph(QuoteState, context_schema=AgentContext)
+def build_query_graph():
+    g = StateGraph(QueryState, context_schema=AgentContext)
     g.add_node("validate_bundle", validate_bundle)
     g.add_node("refresh_if_stale", refresh_if_stale)
     g.add_node("find_placements", find_placements)

@@ -1,15 +1,15 @@
 """Step 5b: the release branch of graph A.
 
-Starts from the same quoted agent as the 5a tests (helpers.make_quoted_ctx). Most tests reserve two
+Starts from the same queried agent as the 5a tests (helpers.make_queried_ctx). Most tests reserve two
 offers together: q1/T1/2 (12:00 @ 100 Gbps, instance si-1) and q1/T2/1 (09:00 @ 40 Gbps, si-2).
 """
 
 import pytest
 
 from ..graphs.protocol import build_protocol_graph
-from ..schemas import CommitAck, QuoteRequest, ReleaseAck, ReleaseRequest, ReserveAck, ReserveRequest
+from ..schemas import CommitAck, QueryRequest, ReleaseAck, ReleaseRequest, ReserveAck, ReserveRequest
 from ..sense import SenseError
-from .helpers import MAIN, commit, make_ctx, make_net, make_quoted_ctx, release, reserve, t, tr
+from .helpers import MAIN, commit, make_ctx, make_net, make_queried_ctx, release, reserve, t, tr
 
 PAIR = ("q1/T1/2", "q1/T2/1")
 
@@ -21,7 +21,7 @@ def net():
 
 @pytest.fixture
 def ctx(net):
-    return make_quoted_ctx(net)
+    return make_queried_ctx(net)
 
 
 def own_on_main(ctx, hh, mm=0):
@@ -85,7 +85,7 @@ def test_released_offer_can_be_reserved_again(ctx):
 
 @pytest.mark.parametrize("over, code", [
     ({"reserve_id": "rsv-9"}, "not_found"),                       # no such reservation
-    ({"offer_ids": ["q1/T1/1"]}, "not_found"),                    # quoted, but not in rsv-1
+    ({"offer_ids": ["q1/T1/1"]}, "not_found"),                    # queried, but not in rsv-1
 ])
 def test_unknown_target(net, ctx, over, code):
     reserve(ctx, *PAIR)
@@ -146,8 +146,8 @@ def test_release_through_protocol_graph(net):
     def send(verb, msg):
         return graph.invoke({"verb": verb, "raw": msg.model_dump(), "now": t(9)}, context=ctx)
 
-    send("quote", QuoteRequest(quote_id="q1", bundle=[tr()], mode="all_or_nothing"))
-    send("reserve", ReserveRequest(request_id="r1", quote_id="q1", offer_ids=["q1/T1/2"]))
+    send("query", QueryRequest(query_id="q1", bundle=[tr()], mode="all_or_nothing"))
+    send("reserve", ReserveRequest(request_id="r1", query_id="q1", offer_ids=["q1/T1/2"]))
     out = send("release", ReleaseRequest(request_id="x1", reserve_id="rsv-1"))
     assert out["response"] == ReleaseAck(reserve_id="rsv-1", offer_ids=["q1/T1/2"])
     assert_all_given_back(net, ctx)

@@ -1,4 +1,4 @@
-"""Placement search for quotes: on the ledger, find (start time, constant rate) placements for one
+"""Placement search for queries: on the ledger, find (start time, constant rate) placements for one
 transfer along one path (slide 7, slide 19 P1).
 
 Reads the ledger, never writes it; never calls SENSE. The first version uses three rules, each
@@ -11,7 +11,7 @@ producing one placement (later replaceable by a pluggable policy):
 The three rules are the trade-offs slide 7 describes: start early, occupy briefly, use little
 capacity. The network agent only lists them and does not choose for the scheduling agent. Rates are
 rounded to rate_step_gbps. Capacity checks use the same slot arithmetic as ledger.pending, so any
-placement we quote can definitely be booked at reserve time (provided the ledger has not changed).
+placement we return can definitely be booked at reserve time (provided the ledger has not changed).
 """
 
 from dataclasses import dataclass

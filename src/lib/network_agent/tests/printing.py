@@ -1,10 +1,10 @@
-"""Printing helpers shared by the demos (step 4 quote, steps 5a / 5b conversations with graph A)."""
+"""Printing helpers shared by the demos (step 4 query, steps 5a / 5b conversations with graph A)."""
 
 from datetime import timedelta
 
 from ..graphs.protocol import build_protocol_graph
 from ..schemas import (
-    CommitAck, CommitRequest, ErrorResponse, ModifyAck, ModifyRequest, QuoteRequest, QuoteResponse, ReleaseAck,
+    CommitAck, CommitRequest, ErrorResponse, ModifyAck, ModifyRequest, QueryRequest, QueryResponse, ReleaseAck,
     ReleaseRequest, ReserveAck, ReserveRequest,
 )
 from .helpers import MAIN, make_ctx, t
@@ -55,9 +55,9 @@ class Session:
         print_request(msg)
         out = self.graph.invoke({"verb": verb, "raw": msg.model_dump(), "now": now}, context=self.ctx)
         swept = out.get("swept")
-        if swept and (swept.expired or swept.stuck or swept.orphans or swept.quotes):
+        if swept and (swept.expired or swept.stuck or swept.orphans or swept.queries):
             print(f"  (sweep before the branch: expired reservations {swept.expired}, still stuck {swept.stuck}, "
-                  f"orphans cancelled {swept.orphans}, quotes dropped {swept.quotes})")
+                  f"orphans cancelled {swept.orphans}, queries dropped {swept.queries})")
         print("network agent → scheduling agent:" + ("   (replayed from the cache; nothing ran)"
                                                       if out.get("replayed") else ""))
         print_response(out["response"], self.ctx)
@@ -106,13 +106,13 @@ def ledger_runs(ledger, link, start, end, now):
 
 
 def print_request(msg):
-    if isinstance(msg, QuoteRequest):
-        print(f"  quote_id {msg.quote_id}, mode {msg.mode}")
+    if isinstance(msg, QueryRequest):
+        print(f"  query_id {msg.query_id}, mode {msg.mode}")
         for x in msg.bundle:
             print(f"  {x.id} ({x.workflow_id}): {x.src} → {x.dst}, {x.bytes / 1e12:g} TB, "
                   f"window {x.window.earliest_start:%H:%M}–{x.window.latest_finish:%H:%M}")
     elif isinstance(msg, ReserveRequest):
-        print(f"  request_id {msg.request_id}, quote_id {msg.quote_id}, offers {msg.offer_ids}")
+        print(f"  request_id {msg.request_id}, query_id {msg.query_id}, offers {msg.offer_ids}")
     elif isinstance(msg, CommitRequest):
         print(f"  request_id {msg.request_id}, reserve_id {msg.reserve_id}")
     elif isinstance(msg, ReleaseRequest):
@@ -125,7 +125,7 @@ def print_request(msg):
 def print_response(resp, ctx):
     if isinstance(resp, ErrorResponse):
         print(f"  ERROR {resp.code}: {resp.detail}")
-    elif isinstance(resp, QuoteResponse):
+    elif isinstance(resp, QueryResponse):
         print(f"  valid until {resp.valid_until:%H:%M:%S}")
         for r in resp.results:
             if r.status != "feasible":

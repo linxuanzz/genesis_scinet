@@ -1,15 +1,15 @@
-"""Step 5b: the expiry sweep (reclaim.sweep_expired) and the quote's validity.
+"""Step 5b: the expiry sweep (reclaim.sweep_expired) and the query's validity.
 
-Same quoted agent as the release tests: q1 was quoted at 09:00 and is valid until 09:15
-(quote_ttl_seconds 900); a reservation made at 09:00 expires at 09:01 (reserve_ttl_seconds 60).
+Same queried agent as the release tests: q1 was queried at 09:00 and is valid until 09:15
+(query_ttl_seconds 900); a reservation made at 09:00 expires at 09:01 (reserve_ttl_seconds 60).
 """
 
 import pytest
 
 from ..graphs.protocol import build_protocol_graph
 from ..reclaim import SweepReport, sweep_expired
-from ..schemas import CommitAck, QuoteRequest, ReserveRequest
-from .helpers import L2, MAIN, commit, make_ctx, make_net, make_quoted_ctx, release, reserve, t, tr
+from ..schemas import CommitAck, QueryRequest, ReserveRequest
+from .helpers import L2, MAIN, commit, make_ctx, make_net, make_queried_ctx, release, reserve, t, tr
 
 PAIR = ("q1/T1/2", "q1/T2/1")
 
@@ -21,7 +21,7 @@ def net():
 
 @pytest.fixture
 def ctx(net):
-    return make_quoted_ctx(net)
+    return make_queried_ctx(net)
 
 
 def own_total(ctx):
@@ -100,24 +100,24 @@ def test_orphan_cancel_failing_again_waits(ctx, net):
     assert sweep_expired(ctx, t(9, 2)).orphans == ["si-1"]
 
 
-# ── quote validity ────────────────────────────────────────────────────────
+# ── query validity ────────────────────────────────────────────────────────
 
-def test_quote_carries_its_validity(net):
+def test_query_carries_its_validity(net):
     ctx, graph = make_ctx(net), build_protocol_graph()
-    out = graph.invoke({"verb": "quote", "raw": QuoteRequest(quote_id="q1", bundle=[tr()], mode="all_or_nothing")
+    out = graph.invoke({"verb": "query", "raw": QueryRequest(query_id="q1", bundle=[tr()], mode="all_or_nothing")
                         .model_dump(), "now": t(9)}, context=ctx)
     assert out["response"].valid_until == t(9, 15)
     assert {q.expires_at for q in ctx.offer_book.values()} == {t(9, 15)}
 
 
 def test_expired_offers_are_dropped(ctx):
-    assert sweep_expired(ctx, t(9, 14)).quotes == []
-    assert sweep_expired(ctx, t(9, 15)).quotes == ["q1"]
-    assert ctx.offer_book == {} and ctx.expired_quotes == {"q1"}
+    assert sweep_expired(ctx, t(9, 14)).queries == []
+    assert sweep_expired(ctx, t(9, 15)).queries == ["q1"]
+    assert ctx.offer_book == {} and ctx.expired_queries == {"q1"}
 
 
 @pytest.mark.parametrize("swept", [False, True])
-def test_reserve_after_the_quote_expired(ctx, swept):
+def test_reserve_after_the_query_expired(ctx, swept):
     """Refused as expired whether or not the sweep has dropped the offers yet."""
     if swept:
         sweep_expired(ctx, t(9, 15))
@@ -126,7 +126,7 @@ def test_reserve_after_the_quote_expired(ctx, swept):
     assert ctx.reservations == {}
 
 
-def test_commit_after_the_quote_was_dropped(ctx):
+def test_commit_after_the_query_was_dropped(ctx):
     """The commitment's transfer and workflow come from the reservation, not from offer_book."""
     reserve(ctx, "q1/T1/2", ttl_seconds=1800)                               # held until 09:30
     sweep_expired(ctx, t(9, 20))
@@ -139,16 +139,16 @@ def test_commit_after_the_quote_was_dropped(ctx):
 # ── through graph A ───────────────────────────────────────────────────────
 
 def test_graph_a_sweeps_before_every_message(net):
-    """An expired reservation is reclaimed by the next message of any kind, so the quote it carries
+    """An expired reservation is reclaimed by the next message of any kind, so the query it carries
     already sees the capacity again."""
     ctx, graph = make_ctx(net), build_protocol_graph()
 
     def send(verb, msg, now):
         return graph.invoke({"verb": verb, "raw": msg.model_dump(), "now": now}, context=ctx)
 
-    send("quote", QuoteRequest(quote_id="q1", bundle=[tr()], mode="all_or_nothing"), t(9))
-    send("reserve", ReserveRequest(request_id="r1", quote_id="q1", offer_ids=["q1/T1/2"]), t(9))
-    out = send("quote", QuoteRequest(quote_id="q2", bundle=[tr("T2")], mode="all_or_nothing"), t(9, 1))
+    send("query", QueryRequest(query_id="q1", bundle=[tr()], mode="all_or_nothing"), t(9))
+    send("reserve", ReserveRequest(request_id="r1", query_id="q1", offer_ids=["q1/T1/2"]), t(9))
+    out = send("query", QueryRequest(query_id="q2", bundle=[tr("T2")], mode="all_or_nothing"), t(9, 1))
     assert out["swept"].expired == ["rsv-1"]
     noon = [o for o in out["response"].results[0].offers if o.start == t(12)]
     assert noon and noon[0].rate_profile[0].gbps == 100                      # 12:00 @ 100 Gbps is free again

@@ -4,7 +4,7 @@
 
     uncommitted reservations past expires_at   cancel in SENSE, give back the bookings, state → expired
     orphan instances                           a failed reserve could not cancel them; retry the cancel
-    offers past the quote's valid_until        dropped from offer_book; the quote_id is remembered as expired
+    offers past the query's valid_until        dropped from offer_book; the query_id is remembered as expired
 
 Graph A runs it lazily at the start of every message, before any branch reads the books, so a branch
 never sees what should already be gone; ``now`` comes from the caller, which keeps it deterministic.
@@ -48,7 +48,7 @@ class SweepReport:
     expired: list[str] = field(default_factory=list)              # reservations given back in full
     stuck: dict[str, list[str]] = field(default_factory=dict)     # reserve_id → offer_ids whose cancel failed
     orphans: list[str] = field(default_factory=list)              # orphan instances cancelled
-    quotes: list[str] = field(default_factory=list)               # quotes whose offers were dropped
+    queries: list[str] = field(default_factory=list)               # queries whose offers were dropped
 
 
 def sweep_expired(ctx: AgentContext, now: datetime) -> SweepReport:
@@ -69,8 +69,8 @@ def sweep_expired(ctx: AgentContext, now: datetime) -> SweepReport:
     report.orphans = cancelled
 
     gone = [o for o, q in ctx.offer_book.items() if now >= q.expires_at]
-    report.quotes = sorted({ctx.offer_book[o].quote_id for o in gone})
+    report.queries = sorted({ctx.offer_book[o].query_id for o in gone})
     for o in gone:
         del ctx.offer_book[o]
-    ctx.expired_quotes.update(report.quotes)
+    ctx.expired_queries.update(report.queries)
     return report

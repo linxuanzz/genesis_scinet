@@ -7,8 +7,8 @@ reply without doing the work twice.
 import pytest
 
 from ..graphs.protocol import build_protocol_graph
-from ..schemas import CommitAck, CommitRequest, ModifyRequest, QuoteResponse, RateSegment, ReleaseRequest
-from .helpers import C1, L2, R1, make_ctx, make_net, quote_t1_t2, t
+from ..schemas import CommitAck, CommitRequest, ModifyRequest, QueryResponse, RateSegment, ReleaseRequest
+from .helpers import C1, L2, R1, make_ctx, make_net, query_t1_t2, t
 
 
 @pytest.fixture
@@ -24,7 +24,7 @@ def agent(net):
         raw = msg.model_dump() if hasattr(msg, "model_dump") else msg
         return graph.invoke({"verb": verb, "raw": raw, "now": now}, context=ctx)
 
-    send("quote", quote_t1_t2())
+    send("query", query_t1_t2())
     return ctx, send
 
 
@@ -48,13 +48,13 @@ def test_resent_commit_keeps_the_binding(agent):
     assert len(ctx.commitments) == 2
 
 
-def test_resent_quote_gives_the_same_offers(net, agent):
+def test_resent_query_gives_the_same_offers(net, agent):
     """Even after the network changed, a resent q1 gets the original offers, and offer_book keeps them."""
     ctx, send = agent
     book = dict(ctx.offer_book)
     net.add_background(L2, t(12), t(13), 30)
-    again = send("quote", quote_t1_t2(), now=t(9, 10))
-    assert again["replayed"] and isinstance(again["response"], QuoteResponse)
+    again = send("query", query_t1_t2(), now=t(9, 10))
+    assert again["replayed"] and isinstance(again["response"], QueryResponse)
     assert ctx.offer_book == book
 
 
@@ -110,8 +110,8 @@ def test_ids_are_per_verb(agent):
 
 def test_malformed_request_is_answered_by_the_branch(agent):
     ctx, send = agent
-    raw = {"request_id": "r9", "quote_id": "q1", "offer_ids": []}
+    raw = {"request_id": "r9", "query_id": "q1", "offer_ids": []}
     for _ in range(2):
         out = send("reserve", raw)
         assert "replayed" not in out and out["response"].code == "invalid_request"
-    assert ctx.answered.keys() == {("quote", "q1")}
+    assert ctx.answered.keys() == {("query", "q1")}

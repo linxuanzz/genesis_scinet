@@ -17,13 +17,13 @@ QOS_CLASS: QosClass = "guaranteedCapped"
 
 
 def place_on_circuit(p: Placement) -> Placement:
-    """Decide how a quoted placement is carried. Step 5a: unchanged, on a new circuit of its own.
+    """Decide how a placement returned by a query is carried. Step 5a: unchanged, on a new circuit of its own.
 
     Extension hooks (not implemented):
     - warm-circuit reuse: put the transfer on an existing circuit with spare capacity on the same path
       and time range instead of creating a new one (slide 24);
-    - alternate path: if the quoted path has filled up since the quote, honour the same offer (same start
-      and rate) on another path that the quote deduplicated away; invisible to the scheduling agent;
+    - alternate path: if the offered path has filled up since the query, honour the same offer (same start
+      and rate) on another path that the query deduplicated away; invisible to the scheduling agent;
     - priority / preemption: make room for a higher-priority transfer by moving or shrinking lower ones.
     """
     return p

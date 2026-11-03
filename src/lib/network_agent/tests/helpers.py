@@ -7,11 +7,11 @@ from ..context import AgentContext
 from ..estimate import IdealRateModel
 from ..graphs.commit import build_commit_graph
 from ..graphs.modify import build_modify_graph
-from ..graphs.quote import build_quote_graph
+from ..graphs.query import build_query_graph
 from ..graphs.release import build_release_graph
 from ..graphs.reserve import build_reserve_graph
 from ..ledger import CapacityLedger
-from ..schemas import (CommitRequest, ModifyRequest, QuoteRequest, RateSegment, ReleaseRequest, ReserveRequest,
+from ..schemas import (CommitRequest, ModifyRequest, QueryRequest, RateSegment, ReleaseRequest, ReserveRequest,
                        TimeWindow, TransferRequest)
 from ..sense import MockSense
 from ..sim import MockNetwork
@@ -20,7 +20,7 @@ from ..topology import Topology
 
 UTC = timezone.utc
 
-CFG = {"slot_seconds": 900, "horizon_seconds": 86400, "reserve_ttl_seconds": 60, "quote_ttl_seconds": 900,
+CFG = {"slot_seconds": 900, "horizon_seconds": 86400, "reserve_ttl_seconds": 60, "query_ttl_seconds": 900,
        "max_paths": 3, "rate_step_gbps": 10}
 
 
@@ -90,19 +90,19 @@ def tr(id="T1", src=SRC, dst=DST, nbytes=50 * 10**12, window=(t(9), t(15)), **ov
                            window=TimeWindow(earliest_start=window[0], latest_finish=window[1]), **over)
 
 
-def quote(graph, ctx, *transfers, mode="all_or_nothing", now=t(9)):
-    """Run one quote with quote_id "q1"; returns the final graph state."""
-    raw = QuoteRequest(quote_id="q1", bundle=list(transfers), mode=mode).model_dump()
+def query(graph, ctx, *transfers, mode="all_or_nothing", now=t(9)):
+    """Run one query with query_id "q1"; returns the final graph state."""
+    raw = QueryRequest(query_id="q1", bundle=list(transfers), mode=mode).model_dump()
     return graph.invoke({"raw": raw, "now": now}, context=ctx)
 
 
-def quote_t1_t2(quote_id="q1"):
-    """The demos' quote request: T1 of slide 7 (50 TB) and T2 (1 TB), all or nothing."""
-    return QuoteRequest(quote_id=quote_id, bundle=[tr("T1"), tr("T2", nbytes=10**12)], mode="all_or_nothing")
+def query_t1_t2(query_id="q1"):
+    """The demos' query request: T1 of slide 7 (50 TB) and T2 (1 TB), all or nothing."""
+    return QueryRequest(query_id=query_id, bundle=[tr("T1"), tr("T2", nbytes=10**12)], mode="all_or_nothing")
 
 
-# the demos' reserve and commit after quote_t1_t2: T1 at 12:00 @ 100 Gbps, T2 at 09:00 @ 40 Gbps
-R1 = ReserveRequest(request_id="r1", quote_id="q1", offer_ids=["q1/T1/2", "q1/T2/1"])
+# the demos' reserve and commit after query_t1_t2: T1 at 12:00 @ 100 Gbps, T2 at 09:00 @ 40 Gbps
+R1 = ReserveRequest(request_id="r1", query_id="q1", offer_ids=["q1/T1/2", "q1/T2/1"])
 C1 = CommitRequest(request_id="c1", reserve_id="rsv-1")
 
 
@@ -112,9 +112,9 @@ def modify_t1(request_id, end, gbps):
                          rate_profile=[RateSegment(start=t(12), end=end, gbps=gbps)])
 
 
-def reserve(ctx, *offer_ids, quote_id="q1", now=t(9), **over):
+def reserve(ctx, *offer_ids, query_id="q1", now=t(9), **over):
     """Run the reserve branch for these offers, with request_id "r1"; returns the final graph state."""
-    raw = ReserveRequest(request_id="r1", quote_id=quote_id, offer_ids=list(offer_ids), **over).model_dump()
+    raw = ReserveRequest(request_id="r1", query_id=query_id, offer_ids=list(offer_ids), **over).model_dump()
     return build_reserve_graph().invoke({"raw": raw, "now": now}, context=ctx)
 
 
@@ -137,13 +137,13 @@ def modify(ctx, offer_id, start, end, gbps, reserve_id="rsv-1", now=t(9), reques
     return build_modify_graph().invoke({"raw": raw, "now": now}, context=ctx)
 
 
-def make_quoted_ctx(net):
-    """An agent that has just quoted T1 (slide 7, 50 TB) and T2 (1 TB) together at 09:00:
+def make_queried_ctx(net):
+    """An agent that has just queried T1 (slide 7, 50 TB) and T2 (1 TB) together at 09:00:
 
         q1/T1/1  09:00 @  40 Gbps → 11:46:40      q1/T2/1  09:00 @  40 Gbps → 09:03:20
         q1/T1/2  12:00 @ 100 Gbps → 13:06:40      q1/T2/2  12:00 @ 100 Gbps → 12:01:20
         q1/T1/3  09:00 @  20 Gbps → 14:33:20      q1/T2/3  09:00 @  10 Gbps → 09:13:20
     """
     ctx = make_ctx(net)
-    build_quote_graph().invoke({"raw": quote_t1_t2().model_dump(), "now": t(9)}, context=ctx)
+    build_query_graph().invoke({"raw": query_t1_t2().model_dump(), "now": t(9)}, context=ctx)
     return ctx

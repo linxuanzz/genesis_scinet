@@ -8,7 +8,7 @@ scenarios: test1 / test2 / test3 / test4 / test5
 """
 
 from ..schemas import ErrorResponse, ModifyAck, ReleaseAck, ReleaseRequest, ReserveAck, ReserveRequest
-from .helpers import C1, L2, R1, make_net, modify_t1, quote_t1_t2, t
+from .helpers import C1, L2, R1, make_net, modify_t1, query_t1_t2, t
 from .printing import Session, sec
 
 
@@ -18,7 +18,7 @@ def change_plans(title):
     """Both committed; T2 finishes early and gives back its slot, T1 is slowed to 50 Gbps until 14:00,
     and finally the rest is released."""
     s = Session(title, make_net())
-    s.send("quote", quote_t1_t2(), t(9))
+    s.send("query", query_t1_t2(), t(9))
     s.send("reserve", R1, t(9) + sec(10))
     s.send("commit", C1, t(9) + sec(20))
     s.event("T2 finished early")
@@ -28,13 +28,13 @@ def change_plans(title):
 
 
 def reservation_expires(title):
-    """Reserved but never committed: the next message, a new quote, first reclaims rsv-1, so its offers see
+    """Reserved but never committed: the next message, a new query, first reclaims rsv-1, so its offers see
     the capacity again; the late commit is told the reservation expired."""
     s = Session(title, make_net())
-    s.send("quote", quote_t1_t2(), t(9))
+    s.send("query", query_t1_t2(), t(9))
     s.send("reserve", R1, t(9) + sec(10))
     s.event("the scheduling agent goes quiet past the reservation's 60 s TTL")
-    s.send("quote", quote_t1_t2("q2"), t(9, 1) + sec(30))
+    s.send("query", query_t1_t2("q2"), t(9, 1) + sec(30))
     return s.send("commit", C1, t(9, 1) + sec(40))
 
 
@@ -42,7 +42,7 @@ def lost_replies(title):
     """Replies get lost and the scheduling agent resends. A resent reserve and commit are answered from the
     cache; a failed commit is not cached, so resending it really retries; reusing r1 for other offers is refused."""
     s = Session(title, make_net())
-    s.send("quote", quote_t1_t2(), t(9))
+    s.send("query", query_t1_t2(), t(9))
     s.send("reserve", R1, t(9) + sec(10))
     s.event("the ReserveAck was lost; the scheduling agent resends r1")
     s.send("reserve", R1, t(9) + sec(15))
@@ -53,16 +53,16 @@ def lost_replies(title):
     s.event("the CommitAck was lost; the scheduling agent resends c1")
     s.send("commit", C1, t(9) + sec(30))
     s.event("a bug in the scheduling agent reuses r1 for other offers")
-    return s.send("reserve", ReserveRequest(request_id="r1", quote_id="q1", offer_ids=["q1/T1/1"]), t(9) + sec(35))
+    return s.send("reserve", ReserveRequest(request_id="r1", query_id="q1", offer_ids=["q1/T1/1"]), t(9) + sec(35))
 
 
-def quote_expires(title):
-    """The quote is valid for 15 minutes; a reserve at 09:16 is refused as expired, and a fresh quote works."""
+def query_expires(title):
+    """The query is valid for 15 minutes; a reserve at 09:16 is refused as expired, and a fresh query works."""
     s = Session(title, make_net())
-    s.send("quote", quote_t1_t2(), t(9))
+    s.send("query", query_t1_t2(), t(9))
     s.send("reserve", R1, t(9, 16))
-    s.send("quote", quote_t1_t2("q2"), t(9, 16))
-    return s.send("reserve", ReserveRequest(request_id="r2", quote_id="q2", offer_ids=["q2/T1/2", "q2/T2/1"]),
+    s.send("query", query_t1_t2("q2"), t(9, 16))
+    return s.send("reserve", ReserveRequest(request_id="r2", query_id="q2", offer_ids=["q2/T1/2", "q2/T2/1"]),
                   t(9, 16) + sec(10))
 
 
@@ -71,7 +71,7 @@ def modify_refused(title):
     the ledger accepts stretching T1 to 14:00 @ 100 Gbps but SENSE refuses, and the old profile is put back.
     Asking for 70 Gbps instead fits."""
     s = Session(title, make_net())
-    s.send("quote", quote_t1_t2(), t(9))
+    s.send("query", query_t1_t2(), t(9))
     s.send("reserve", R1, t(9) + sec(10))
     s.send("commit", C1, t(9) + sec(20))
     s.net.add_background(L2, t(13), t(14), 30)
@@ -84,7 +84,7 @@ SCENARIOS = {
     "test1": ("Change of plans: partial release, modify, release the rest", change_plans, ReleaseAck),
     "test2": ("Reservation expires: reclaimed by the next message, late commit refused", reservation_expires, ErrorResponse),
     "test3": ("Lost replies: resends answered from the cache, a failed commit retried", lost_replies, ErrorResponse),
-    "test4": ("Quote expires: reserve after 15 minutes refused, re-quote", quote_expires, ReserveAck),
+    "test4": ("Query expires: reserve after 15 minutes refused, re-query", query_expires, ReserveAck),
     "test5": ("SENSE refuses a modify: ledger put back; a smaller change fits", modify_refused, ModifyAck),
 }
 

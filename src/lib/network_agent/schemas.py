@@ -1,6 +1,6 @@
 """Messages between the scheduling agent and the network agent (slides 6, 7, 19).
 
-This file holds the messages of the planning loop quote → reserve → commit, telemetry samples
+This file holds the messages of the planning loop query → reserve → commit, telemetry samples
 (step 3a) and SENSE messages (step 3b); other messages are added in the step that first needs them
 (modify / release → step 5b, repaired / at_risk → step 7, TransferRecord → step 9).
 
@@ -35,7 +35,7 @@ def _check_profile(profile: list["RateSegment"]) -> None:
             raise ValueError("rate_profile segments must be sorted and non-overlapping")
 
 
-# ── quote ────────────────────────────────────────────────────────────────
+# ── query ────────────────────────────────────────────────────────────────
 
 class TimeWindow(Msg):
     earliest_start: AwareDatetime
@@ -69,10 +69,10 @@ class TransferRequest(Msg):
         return self
 
 
-class QuoteRequest(Msg):
+class QueryRequest(Msg):
     """Asks about one bundle at a time; read-only, reserves nothing (slide 6)."""
 
-    quote_id: str
+    query_id: str
     bundle: list[TransferRequest]
     mode: Literal["all_or_nothing", "best_subset"]
 
@@ -126,8 +126,8 @@ class RejectReason(Msg):
     when: AwareDatetime | None = None                 # if set: the earliest time capacity may be available
 
 
-class TransferQuote(Msg):
-    """The quote result for one transfer in the bundle (slide 19: feasible | infeasible | unreachable)."""
+class TransferQuery(Msg):
+    """The query result for one transfer in the bundle (slide 19: feasible | infeasible | unreachable)."""
 
     transfer_id: str
     status: Literal["feasible", "infeasible", "unreachable"]
@@ -147,10 +147,10 @@ class TransferQuote(Msg):
         return self
 
 
-class QuoteResponse(Msg):
-    quote_id: str
+class QueryResponse(Msg):
+    query_id: str
     mode: Literal["all_or_nothing", "best_subset"]
-    results: list[TransferQuote]
+    results: list[TransferQuery]
     valid_until: AwareDatetime                        # the offers can be reserved until then (step 5b)
 
     @property
@@ -166,7 +166,7 @@ class ReserveRequest(Msg):
     """Tentatively reserve the chosen offers; released automatically if not committed before the TTL expires (slide 19)."""
 
     request_id: str                                   # for idempotent handling of duplicate requests (step 5b)
-    quote_id: str
+    query_id: str
     offer_ids: list[str]
     ttl_seconds: PositiveInt | None = None            # None → use reserve_ttl_seconds from the config
 

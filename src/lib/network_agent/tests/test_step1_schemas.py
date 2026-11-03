@@ -9,8 +9,8 @@ import pytest
 from pydantic import ValidationError
 
 from ..schemas import (
-    CommitAck, Commitment, EndpointBinding, Offer, QuoteRequest, QuoteResponse,
-    RateSegment, RejectReason, ReserveRequest, TimeWindow, TransferQuote, TransferRequest,
+    CommitAck, Commitment, EndpointBinding, Offer, QueryRequest, QueryResponse,
+    RateSegment, RejectReason, ReserveRequest, TimeWindow, TransferQuery, TransferRequest,
 )
 from .helpers import DST, SRC, t
 
@@ -31,9 +31,9 @@ def a2(**over):
 
 # ── valid messages ────────────────────────────────────────────────────────
 
-def test_valid_quote_roundtrip_json():
-    q = QuoteRequest(quote_id="q1", bundle=[t1(), t1(id="T2")], mode="all_or_nothing")
-    assert QuoteRequest.model_validate_json(q.model_dump_json()) == q
+def test_valid_query_roundtrip_json():
+    q = QueryRequest(query_id="q1", bundle=[t1(), t1(id="T2")], mode="all_or_nothing")
+    assert QueryRequest.model_validate_json(q.model_dump_json()) == q
 
 
 def test_offer_start_is_first_segment():
@@ -62,16 +62,16 @@ def test_binding_interface_is_optional():
     lambda: t1(bytes=0),                                                              # bytes not positive
     lambda: t1(dst=SRC),                                                              # src == dst
     lambda: t1(color="red"),                                                          # unknown field
-    lambda: QuoteRequest(quote_id="q", bundle=[], mode="best_subset"),                # empty bundle
-    lambda: QuoteRequest(quote_id="q", bundle=[t1(), t1()], mode="best_subset"),      # duplicate transfer id
-    lambda: QuoteRequest(quote_id="q", bundle=[t1()], mode="some"),                   # invalid mode
+    lambda: QueryRequest(query_id="q", bundle=[], mode="best_subset"),                # empty bundle
+    lambda: QueryRequest(query_id="q", bundle=[t1(), t1()], mode="best_subset"),      # duplicate transfer id
+    lambda: QueryRequest(query_id="q", bundle=[t1()], mode="some"),                   # invalid mode
     lambda: RateSegment(start=t(12), end=t(12), gbps=10),                             # empty time range
     lambda: RateSegment(start=t(12), end=t(13), gbps=0),                              # rate not positive
     lambda: a2(rate_profile=[RateSegment(start=t(12), end=t(13), gbps=10),
                              RateSegment(start=t(12, 30), end=t(14), gbps=10)]),      # overlapping segments
     lambda: a2(predicted_finish_p95=t(13)),                                           # p95 < p50
     lambda: a2(predicted_finish_p50=t(11), predicted_finish_p95=t(11)),               # finishes before it starts
-    lambda: ReserveRequest(request_id="r", quote_id="q", offer_ids=["a2", "a2"]),     # duplicate offer
+    lambda: ReserveRequest(request_id="r", query_id="q", offer_ids=["a2", "a2"]),     # duplicate offer
     lambda: EndpointBinding(transfer_id="T1", src_uri="u", dst_uri="v", vlan=5000, interface="e"),
 ])
 def test_rejected(make):
@@ -84,26 +84,26 @@ def test_frozen():
         t1().bytes = 1
 
 
-# ── consistency of quote results ──────────────────────────────────────────
+# ── consistency of query results ──────────────────────────────────────────
 
-def test_transfer_quote_consistency():
+def test_transfer_query_consistency():
     no_cap = RejectReason(cause="no_capacity", detail="window full")
-    TransferQuote(transfer_id="T1", status="feasible", offers=[a2()])
-    TransferQuote(transfer_id="T1", status="infeasible", reason=no_cap)
+    TransferQuery(transfer_id="T1", status="feasible", offers=[a2()])
+    TransferQuery(transfer_id="T1", status="infeasible", reason=no_cap)
     with pytest.raises(ValidationError):
-        TransferQuote(transfer_id="T1", status="feasible")                    # feasible but no offers
+        TransferQuery(transfer_id="T1", status="feasible")                    # feasible but no offers
     with pytest.raises(ValidationError):
-        TransferQuote(transfer_id="T1", status="infeasible")                  # infeasible but no reason
+        TransferQuery(transfer_id="T1", status="infeasible")                  # infeasible but no reason
     with pytest.raises(ValidationError):
-        TransferQuote(transfer_id="T2", status="feasible", offers=[a2()])     # offer belongs to another transfer
+        TransferQuery(transfer_id="T2", status="feasible", offers=[a2()])     # offer belongs to another transfer
 
 
 def test_admissible_depends_on_mode():
-    ok = TransferQuote(transfer_id="T1", status="feasible", offers=[a2()])
-    bad = TransferQuote(transfer_id="T2", status="unreachable",
+    ok = TransferQuery(transfer_id="T1", status="feasible", offers=[a2()])
+    bad = TransferQuery(transfer_id="T2", status="unreachable",
                         reason=RejectReason(cause="no_path", detail="no route"))
     def resp(mode, results):
-        return QuoteResponse(quote_id="q", mode=mode, results=results, valid_until=t(9, 15))
+        return QueryResponse(query_id="q", mode=mode, results=results, valid_until=t(9, 15))
     assert not resp("all_or_nothing", [ok, bad]).admissible
     assert resp("best_subset", [ok, bad]).admissible
     assert not resp("best_subset", [bad]).admissible

@@ -1,4 +1,4 @@
-"""Step 4: the quote branch of graph A. The core case reproduces slide 7:
+"""Step 4: the query branch of graph A. The core case reproduces slide 7:
 
     T1 = 50 TB, window 09:00–15:00; ledger: only 40 Gbps left before 12:00, fully free 100 Gbps after.
     a1 09:00 @ 40 Gbps → 11:46:40   (slide says 13:47; the arithmetic gives 11:47)
@@ -10,9 +10,9 @@ from datetime import timedelta
 
 import pytest
 
-from ..graphs.quote import build_quote_graph
-from ..schemas import QuoteRequest, RateSegment
-from .helpers import L2, MAIN, make_ctx, make_net, quote, t, tr
+from ..graphs.query import build_query_graph
+from ..schemas import QueryRequest, RateSegment
+from .helpers import L2, MAIN, make_ctx, make_net, query, t, tr
 from .printing import hops, print_network
 
 
@@ -28,7 +28,7 @@ def ctx(net):
 
 @pytest.fixture
 def graph():
-    return build_quote_graph()
+    return build_query_graph()
 
 
 def summary(offer):
@@ -39,7 +39,7 @@ def summary(offer):
 # ── slide 7 ──────────────────────────────────────────────────────────────
 
 def test_slide7_three_offers(graph, ctx):
-    resp = quote(graph, ctx, tr())["response"]
+    resp = query(graph, ctx, tr())["response"]
     assert resp.admissible
     offers = resp.results[0].offers
     assert [summary(o) for o in offers] == [
@@ -52,10 +52,10 @@ def test_slide7_three_offers(graph, ctx):
 
 
 def test_offers_are_kept_for_reserve(graph, ctx):
-    quote(graph, ctx, tr())
+    query(graph, ctx, tr())
     assert set(ctx.offer_book) == {"q1/T1/1", "q1/T1/2", "q1/T1/3"}
     kept = ctx.offer_book["q1/T1/2"]
-    assert (kept.quote_id, kept.placement.path) == ("q1", MAIN)
+    assert (kept.query_id, kept.placement.path) == ("q1", MAIN)
     assert kept.request == tr()                   # the original request, for the commitment's workflow_id
 
 
@@ -63,20 +63,20 @@ def test_offers_are_kept_for_reserve(graph, ctx):
 
 def test_refresh_pulls_telemetry_into_ledger(graph, ctx):
     assert ctx.ledger.observed(L2, 0).source == "topology"
-    out = quote(graph, ctx, tr())
+    out = query(graph, ctx, tr())
     assert L2 in out["refreshed"]
     assert (ctx.ledger.observed(L2, 0).gbps, ctx.ledger.observed(L2, 0).source) == (40, "mock")
     assert ctx.telemetry.calls == 1
 
 
 def test_fresh_values_are_not_refetched(graph, ctx):
-    quote(graph, ctx, tr())
-    out = quote(graph, ctx, tr(), now=t(9, 1))    # samples are valid for 5 minutes, still fresh after 1
+    query(graph, ctx, tr())
+    out = query(graph, ctx, tr(), now=t(9, 1))    # samples are valid for 5 minutes, still fresh after 1
     assert out["refreshed"] == [] and ctx.telemetry.calls == 1
 
 
-def test_quote_is_read_only(graph, ctx):
-    quote(graph, ctx, tr())
+def test_query_is_read_only(graph, ctx):
+    query(graph, ctx, tr())
     assert all(ctx.ledger.own(link, i) == 0 for link in MAIN for i in range(ctx.ledger.n_slots))
 
 
@@ -86,7 +86,7 @@ def test_blocked_by_own_commitment(net, graph, ctx):
     """Remove background traffic and book 30 ourselves on the main path instead: the earliest start can only get 70, because of own_commitment."""
     net._background[L2].clear()
     ctx.ledger.pending("ours", MAIN, [RateSegment(start=t(9), end=t(12), gbps=30)])
-    first = quote(graph, ctx, tr())["response"].results[0].offers[0]
+    first = query(graph, ctx, tr())["response"].results[0].offers[0]
     assert (first.rate_profile[0].gbps, first.blocked_by) == (70, "own_commitment")
 
 
@@ -100,12 +100,12 @@ def test_blocked_by_own_commitment(net, graph, ctx):
      "infeasible", "below_min_useful_rate"),                                          # but is below the declared 60
 ])
 def test_rejections(graph, ctx, transfer, status, cause):
-    result = quote(graph, ctx, transfer)["response"].results[0]
+    result = query(graph, ctx, transfer)["response"].results[0]
     assert (result.status, result.reason.cause) == (status, cause)
 
 
 def test_now_clips_earliest_start(graph, ctx):
-    offers = quote(graph, ctx, tr(), now=t(10, 5))["response"].results[0].offers
+    offers = query(graph, ctx, tr(), now=t(10, 5))["response"].results[0].offers
     assert min(o.rate_profile[0].start for o in offers) == t(10, 5)
 
 
@@ -113,14 +113,14 @@ def test_now_clips_earliest_start(graph, ctx):
 
 def test_mode_decides_admissible(graph, ctx):
     bundle = [tr(), tr(id="T2", dst="mars")]
-    assert not quote(graph, ctx, *bundle, mode="all_or_nothing")["response"].admissible
-    assert quote(graph, ctx, *bundle, mode="best_subset")["response"].admissible
+    assert not query(graph, ctx, *bundle, mode="all_or_nothing")["response"].admissible
+    assert query(graph, ctx, *bundle, mode="best_subset")["response"].admissible
 
 
 # ── exit for failed validation ────────────────────────────────────────────
 
 def test_invalid_request_goes_straight_to_respond(graph, ctx):
-    raw = QuoteRequest(quote_id="q9", bundle=[tr()], mode="best_subset").model_dump()
+    raw = QueryRequest(query_id="q9", bundle=[tr()], mode="best_subset").model_dump()
     raw["bundle"][0]["window"] = {"earliest_start": t(15), "latest_finish": t(9)}   # window reversed
     out = graph.invoke({"raw": raw, "now": t(9)}, context=ctx)
     assert (out["response"].code, out["response"].request_id) == ("invalid_request", "q9")
@@ -132,10 +132,10 @@ def test_graph_shape(graph):
     assert {"validate_bundle", "refresh_if_stale", "find_placements", "estimate_finish", "respond"} <= nodes
 
 
-# ── demo: print the full scenario and quote result ────────────────────────
+# ── demo: print the full scenario and query result ────────────────────────
 #
 # How to run (from the repository root), with one scenario as the argument:
-#   python -m <package path>.tests.test_step4_quote_graph test1     (e.g. network_agent.tests...)
+#   python -m <package path>.tests.test_step4_query_graph test1     (e.g. network_agent.tests...)
 # scenarios: test1 / test2 / test3
 
 SCENARIOS = {
@@ -162,7 +162,7 @@ def print_scenario(title, net, ctx, req, now, out):
     topo = net.topology
     print_network(title, net)
 
-    print(f"\nRequest {req.quote_id} (mode={req.mode}), now = {now:%H:%M}:")
+    print(f"\nRequest {req.query_id} (mode={req.mode}), now = {now:%H:%M}:")
     for tr_ in req.bundle:
         w = tr_.window
         print(f"  {tr_.id}: {tr_.src} → {tr_.dst}, {tr_.bytes / 1e12:g} TB, "
@@ -180,7 +180,7 @@ def print_scenario(title, net, ctx, req, now, out):
     print("Links refreshed:", out["refreshed"])
 
     resp = out["response"]
-    print(f"\nQuote result: admissible = {resp.admissible}")
+    print(f"\nQuery result: admissible = {resp.admissible}")
     for r in resp.results:
         if r.status != "feasible":
             print(f"  {r.transfer_id}: {r.status} ({r.reason.cause}: {r.reason.detail})")
@@ -194,8 +194,8 @@ def demo(title=SCENARIOS["test1"][0], background_gbps=60, deadline=t(15)):
     net = make_net(background_gbps)
     ctx = make_ctx(net)
     transfer = tr(window=(t(9), deadline))
-    out = quote(build_quote_graph(), ctx, transfer)
-    req = QuoteRequest(quote_id="q1", bundle=[transfer], mode="all_or_nothing")
+    out = query(build_query_graph(), ctx, transfer)
+    req = QueryRequest(query_id="q1", bundle=[transfer], mode="all_or_nothing")
     print_scenario(title, net, ctx, req, t(9), out)
     return out
 

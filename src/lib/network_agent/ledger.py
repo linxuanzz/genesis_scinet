@@ -6,7 +6,7 @@
   (slide 12: "every number carries its source").
 - own: the sum of our own bookings. A booking is in one of two states: pending (held at reserve time)
   or confirmed (after commit). A pending booking counts towards own as soon as it is written, so the
-  very next quote sees it (slide 19).
+  very next query sees it (slide 19).
 
 "Where is capacity deducted after accept": in ``pending()``. On failure ``rollback()`` returns it,
 on success ``confirm()`` makes it permanent, and ``release()`` gives it back when no longer needed;
@@ -49,7 +49,7 @@ class Observation:
     gbps: float
     source: str           # "topology" | "sense" | "telemetry" | ...
     at: datetime          # sample time
-    valid_until: datetime  # expiry; the topology's initial values expire at origin, so they are refreshed before the first quote
+    valid_until: datetime  # expiry; the topology's initial values expire at origin, so they are refreshed before the first query
 
 
 @dataclass

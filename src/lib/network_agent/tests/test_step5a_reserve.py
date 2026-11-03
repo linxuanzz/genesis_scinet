@@ -1,6 +1,6 @@
 """Step 5a: the reserve branch of graph A (``hold`` in the slides).
 
-Every test starts from the slide-7 network quoted at 09:00 with two transfers (helpers.make_quoted_ctx;
+Every test starts from the slide-7 network queried at 09:00 with two transfers (helpers.make_queried_ctx;
 all offers on the main path L1 → L2 → L3):
 
     q1/T1/1  09:00 @  40 Gbps → 11:46:40      q1/T2/1  09:00 @  40 Gbps → 09:03:20
@@ -15,7 +15,7 @@ import pytest
 from ..graphs.reserve import build_reserve_graph
 from ..ledger import InsufficientCapacity
 from ..schemas import RateSegment, ReserveAck, Terminal
-from .helpers import DST, L2, MAIN, SRC, make_net, make_quoted_ctx, reserve, t
+from .helpers import DST, L2, MAIN, SRC, make_net, make_queried_ctx, reserve, t
 
 
 @pytest.fixture
@@ -25,7 +25,7 @@ def net():
 
 @pytest.fixture
 def ctx(net):
-    return make_quoted_ctx(net)
+    return make_queried_ctx(net)
 
 
 def assert_untouched(net, ctx):
@@ -41,7 +41,7 @@ def test_reserve_debits_ledger_and_holds_in_sense(net, ctx):
     resp = reserve(ctx, "q1/T1/1")["response"]
     assert resp == ReserveAck(reserve_id="rsv-1", offer_ids=["q1/T1/1"], expires_at=t(9, 1))  # TTL 60 s from the config
 
-    # ledger: 40 Gbps pending on every hop of the main path; L2 had exactly 40 left, so the next quote sees 0
+    # ledger: 40 Gbps pending on every hop of the main path; L2 had exactly 40 left, so the next query sees 0
     assert ctx.ledger.booking("rsv-1/q1/T1/1").state == "pending"
     assert [ctx.ledger.own(link, 0) for link in MAIN] == [40, 40, 40]
     assert ctx.ledger.available(L2, 0) == 0
@@ -78,8 +78,8 @@ def test_ttl_from_request_overrides_config(ctx):
 # ── rejected before anything is written ───────────────────────────────────
 
 @pytest.mark.parametrize("offer_ids, over, code", [
-    (["q1/T9/1"], {}, "not_found"),                            # never quoted
-    (["q1/T1/1"], {"quote_id": "q2"}, "invalid_request"),      # offer belongs to another quote
+    (["q1/T9/1"], {}, "not_found"),                            # never queried
+    (["q1/T1/1"], {"query_id": "q2"}, "invalid_request"),      # offer belongs to another query
     (["q1/T1/1", "q1/T1/2"], {}, "invalid_request"),           # two offers for the same transfer
     (["q1/T1/1"], {"now": t(12)}, "expired"),                  # 09:00–11:46:40 is already over
 ])
@@ -90,7 +90,7 @@ def test_invalid_reserve_changes_nothing(net, ctx, offer_ids, over, code):
 
 
 def test_malformed_request(net, ctx):
-    raw = {"request_id": "r9", "quote_id": "q1", "offer_ids": []}
+    raw = {"request_id": "r9", "query_id": "q1", "offer_ids": []}
     resp = build_reserve_graph().invoke({"raw": raw, "now": t(9)}, context=ctx)["response"]
     assert (resp.request_id, resp.code) == ("r9", "invalid_request")
     assert_untouched(net, ctx)
@@ -103,10 +103,10 @@ def test_offer_cannot_be_reserved_twice(ctx):
     assert list(ctx.reservations) == ["rsv-1"]
 
 
-# ── the network changed after the quote ───────────────────────────────────
+# ── the network changed after the query ───────────────────────────────────
 
-def test_recheck_catches_capacity_lost_since_quote(net, ctx):
-    """Others take 30 more Gbps on L2 after the quote. At 09:10 the quote-time samples (valid 5 min) are stale,
+def test_recheck_catches_capacity_lost_since_query(net, ctx):
+    """Others take 30 more Gbps on L2 after the query. At 09:10 the query-time samples (valid 5 min) are stale,
     recheck refreshes them, and the debit is refused before SENSE is ever called."""
     net.add_background(L2, t(9), t(12), 30)                    # 90 of 100 used → 10 left, offer needs 40
     out = reserve(ctx, "q1/T1/1", now=t(9, 10))

@@ -1,6 +1,6 @@
 """Step 5b: the modify branch of graph A.
 
-Same quoted agent as the 5a tests. The offers used here:
+Same queried agent as the 5a tests. The offers used here:
 
     q1/T1/1  09:00–11:46:40 @  40 Gbps   (L2 has 40 left before 12:00: background 60)
     q1/T1/2  12:00–13:06:40 @ 100 Gbps
@@ -13,8 +13,8 @@ import pytest
 from ..graphs.modify import build_modify_graph
 from ..graphs.protocol import build_protocol_graph
 from ..ledger import InsufficientCapacity
-from ..schemas import CommitAck, ModifyAck, ModifyRequest, QuoteRequest, RateSegment, ReserveRequest
-from .helpers import L2, MAIN, commit, make_ctx, make_net, make_quoted_ctx, modify, release, reserve, t, tr
+from ..schemas import CommitAck, ModifyAck, ModifyRequest, QueryRequest, RateSegment, ReserveRequest
+from .helpers import L2, MAIN, commit, make_ctx, make_net, make_queried_ctx, modify, release, reserve, t, tr
 
 
 @pytest.fixture
@@ -24,7 +24,7 @@ def net():
 
 @pytest.fixture
 def ctx(net):
-    return make_quoted_ctx(net)
+    return make_queried_ctx(net)
 
 
 def own_on_main(ctx, hh, mm=0):
@@ -95,7 +95,7 @@ def test_started_offer_keeps_its_start(ctx):
 
 @pytest.mark.parametrize("over, code", [
     ({"reserve_id": "rsv-9"}, "not_found"),
-    ({"offer_id": "q1/T1/1"}, "not_found"),                                 # quoted, but not in rsv-1
+    ({"offer_id": "q1/T1/1"}, "not_found"),                                 # queried, but not in rsv-1
     ({"now": t(9, 1)}, "expired"),                                          # rsv-1 expires at 09:01
     ({"start": t(8), "end": t(9)}, "invalid_request"),                      # already past
     ({"start": t(8, 45)}, "invalid_request"),                               # starts in the past
@@ -177,8 +177,8 @@ def test_modify_through_protocol_graph(net):
     def send(verb, msg):
         return graph.invoke({"verb": verb, "raw": msg.model_dump(), "now": t(9)}, context=ctx)
 
-    send("quote", QuoteRequest(quote_id="q1", bundle=[tr()], mode="all_or_nothing"))
-    send("reserve", ReserveRequest(request_id="r1", quote_id="q1", offer_ids=["q1/T1/2"]))
+    send("query", QueryRequest(query_id="q1", bundle=[tr()], mode="all_or_nothing"))
+    send("reserve", ReserveRequest(request_id="r1", query_id="q1", offer_ids=["q1/T1/2"]))
     out = send("modify", ModifyRequest(request_id="m1", reserve_id="rsv-1", offer_id="q1/T1/2",
                                        rate_profile=[RateSegment(start=t(12), end=t(14), gbps=50)]))
     assert isinstance(out["response"], ModifyAck)
