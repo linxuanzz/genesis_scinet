@@ -71,7 +71,7 @@ def test_expired_reservation(ctx):
     reserve(ctx, "q1/T1/2")                                    # expires 09:01
     resp = commit(ctx, now=t(9, 1))["response"]
     assert resp.code == "expired"
-    assert ctx.ledger.booking("rsv-1/q1/T1/2").state == "pending"   # still held: reclaiming it is step 5b
+    assert ctx.ledger.booking("rsv-1/q1/T1/2").state == "pending"   # the branch alone does not reclaim; graph A's sweep does
 
 
 def test_cannot_commit_twice(ctx):
@@ -127,7 +127,7 @@ def test_one_graph_quote_reserve_commit(net):
 
     q = send("quote", QuoteRequest(quote_id="q1", bundle=[tr()], mode="all_or_nothing"))
     assert isinstance(q["response"], QuoteResponse)
-    assert set(q) == {"verb", "raw", "now", "response"}       # branch-internal fields stay inside the branch
+    assert set(q) == {"verb", "raw", "now", "swept", "response"}   # branch-internal fields stay inside the branch
 
     r = send("reserve", ReserveRequest(request_id="r1", quote_id="q1", offer_ids=["q1/T1/2"]))
     assert isinstance(r["response"], ReserveAck)

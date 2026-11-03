@@ -6,7 +6,7 @@ above do not change. We follow SENSE's two-phase flow (workflow_phased):
     propagate  reserve resources, no configuration pushed       ← reserve (``hold`` in the slides)
     commit     push configuration; SENSE rolls back on failure  ← commit
     cancel     return the resources                             ← release / reserve expiry
-    (modify is added in step 5b)
+    modify     change bandwidth / time range in place            ← modify (step 5b)
 
 Every failed call raises ``SenseError``; graph A's sense_call node uses it to take the rollback branch.
 """
@@ -20,7 +20,7 @@ from .ledger import EPS_GBPS
 from .schemas import ServiceIntent, ServiceState
 from .sim import MockNetwork
 
-Op = Literal["propagate", "commit", "cancel"]
+Op = Literal["propagate", "commit", "cancel", "modify", "state"]
 
 
 class SenseError(Exception):
@@ -34,7 +34,24 @@ class SenseAdapter(Protocol):
     def propagate(self, intent: ServiceIntent, now: datetime) -> ServiceState: ...
     def commit(self, instance_id: str, now: datetime) -> ServiceState: ...
     def cancel(self, instance_id: str, now: datetime) -> ServiceState: ...
+    def modify(self, instance_id: str, intent: ServiceIntent, now: datetime) -> ServiceState: ...
     def state(self, instance_id: str) -> ServiceState: ...
+
+
+def cancel_instances(sense: SenseAdapter, instance_ids: list[str],
+                     now: datetime) -> tuple[list[str], dict[str, SenseError]]:
+    """Cancel each instance, going on past failures; one SENSE already reports as cancelled is skipped, so
+    calling this again after a partial failure is safe. Returns (cancelled ids, {failed id: error})."""
+    cancelled: list[str] = []
+    failed: dict[str, SenseError] = {}
+    for instance_id in instance_ids:
+        try:
+            if sense.state(instance_id).state != "cancelled":
+                sense.cancel(instance_id, now)
+            cancelled.append(instance_id)
+        except SenseError as e:
+            failed[instance_id] = e
+    return cancelled, failed
 
 
 @dataclass
@@ -74,8 +91,25 @@ class MockSense:
         self.network.remove_ours(instance_id)
         return self._set(s.model_copy(update={"state": "cancelled", "vlan": None, "changed_at": now}))
 
+    def modify(self, instance_id: str, intent: ServiceIntent, now: datetime) -> ServiceState:
+        """Same instance, VLAN and state; the new bandwidth / time range is checked without the old one."""
+        s = self._expect("modify", instance_id, "reserved", "committed")
+        self._maybe_fail("modify")
+        old = self.network._ours[instance_id]
+        self.network.remove_ours(instance_id)
+        gbps, path = intent.capacity_mbps / 1000, tuple(intent.path_inclusion)
+        room = self.network.headroom(path, intent.start, intent.end)
+        if gbps > room + EPS_GBPS:
+            self.network._ours[instance_id] = old
+            raise SenseError("modify", "insufficient_capacity", f"need {gbps} Gbps, headroom {room}")
+        self.network.add_ours(instance_id, path, intent.start, intent.end, gbps)
+        return self._set(s.model_copy(update={"changed_at": now}))
+
     def state(self, instance_id: str) -> ServiceState:
-        return self._states[instance_id]
+        s = self._states.get(instance_id)
+        if s is None:
+            raise SenseError("state", "not_found", instance_id)
+        return s
 
     # ── internals ─────────────────────────────────────────────────────────
 

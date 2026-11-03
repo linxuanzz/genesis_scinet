@@ -21,12 +21,11 @@ from typing import TypedDict
 
 from langgraph.graph import END, START, StateGraph
 from langgraph.runtime import Runtime
-from pydantic import ValidationError
 
 from ..context import AgentContext, Reservation
 from ..schemas import CommitAck, Commitment, CommitRequest, EndpointBinding, ErrorResponse, ServiceState
 from ..sense import SenseError
-from .common import on_error
+from .common import on_error, parse_request
 
 
 class CommitState(TypedDict, total=False):
@@ -44,13 +43,9 @@ class CommitState(TypedDict, total=False):
 
 def validate_commit(state: CommitState, runtime: Runtime[AgentContext]) -> dict:
     """Find the reservation and check it can still be committed. Nothing is written."""
-    ctx, raw = runtime.context, state["raw"]
-    try:
-        req = CommitRequest.model_validate(raw)
-    except ValidationError as e:
-        request_id = raw.get("request_id") if isinstance(raw, dict) else None
-        return {"error": ErrorResponse(request_id=str(request_id or "unknown"), code="invalid_request",
-                                       detail="; ".join(err["msg"] for err in e.errors()))}
+    ctx, req = runtime.context, parse_request(CommitRequest, state["raw"])
+    if isinstance(req, ErrorResponse):
+        return {"error": req}
 
     def fail(code: str, detail: str) -> dict:
         return {"request": req, "error": ErrorResponse(request_id=req.request_id, code=code, detail=detail)}
@@ -58,10 +53,10 @@ def validate_commit(state: CommitState, runtime: Runtime[AgentContext]) -> dict:
     r = ctx.reservations.get(req.reserve_id)
     if r is None:
         return fail("not_found", f"unknown reservation {req.reserve_id}")
-    if r.state == "committed":
-        return fail("conflict", f"{req.reserve_id} is already committed")
-    if state["now"] >= r.expires_at:
+    if r.is_expired(state["now"]):
         return fail("expired", f"{req.reserve_id} expired at {r.expires_at:%H:%M:%S}")
+    if r.state != "reserved":
+        return fail("conflict", f"{req.reserve_id} is already {r.state}")
     return {"request": req, "reservation": r}
 
 
@@ -70,7 +65,7 @@ def sense_commit(state: CommitState, runtime: Runtime[AgentContext]) -> dict:
     earlier attempt. Stops at the first failure."""
     sense, now = runtime.context.sense, state["now"]
     committed: dict[str, ServiceState] = {}
-    for item in state["reservation"].items:
+    for item in state["reservation"].held:      # items released before the commit are left out
         try:
             s = sense.state(item.instance_id)
             committed[item.offer_id] = s if s.state == "committed" else sense.commit(item.instance_id, now)
@@ -84,15 +79,15 @@ def ledger_confirm(state: CommitState, runtime: Runtime[AgentContext]) -> dict:
     """Confirm the bookings and turn each reserved offer into a Commitment with its endpoint binding."""
     ctx, r = runtime.context, state["reservation"]
     commitments = []
-    for item in r.items:
+    for item in r.held:
         ctx.ledger.confirm(item.booking_id)
-        req = ctx.offer_book[item.offer_id].request
-        s = state["committed"][item.offer_id]
+        req, s = item.request, state["committed"][item.offer_id]
         src, dst = item.intent.terminals
         c = Commitment(commitment_id=ctx.new_id("cmt"), transfer_id=req.id, workflow_id=req.workflow_id,
                        circuit_id=s.instance_id, rate_profile=item.placement.rate_profile,
                        binding=EndpointBinding(transfer_id=req.id, src_uri=src.uri, dst_uri=dst.uri, vlan=s.vlan))
         ctx.commitments[c.commitment_id] = c
+        r.commitment_ids[item.offer_id] = c.commitment_id
         commitments.append(c)
     r.state = "committed"
     return {"commitments": commitments}

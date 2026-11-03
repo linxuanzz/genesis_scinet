@@ -422,3 +422,41 @@ D 部分是 5a 的 demo，117 个测试全部通过（demo 本身也是一个测
 - `admissible` 改为"至少有一个 plan"。scheduling agent 可以直接选一个 plan，也可以自己拼组合；自己拼的组合仍由 reserve 时的原子检查兜底。
 
 至于每个 plan 内部的贪心按什么标准挑（完成最早，还是占用带宽最少），以及第一层按什么展开，属于 offer 生成策略，可以和 PLAN 里"跨路径去重、offer 数量稳定"那条一起定。
+
+---
+
+> 我发现test1 commit之后，observed仍然没有变化。我想知道，observed的更新目前只是基于时间过期的、被动的吗，如果此时observed没变化，又发出新的quote，那岂不是出问题了？是不是应该commit后立马对observed的相应link做出更新？
+
+commit 之后 observed 不变，是有意这样设计的，不会出问题。我们自己的占用记在另一层 `own` 里，而且在 reserve 时就已经立即记上了。
+
+**账本有两层**（ledger.py 开头和 3a 定下的接口约定）：
+
+- `observed`：**不算我们自己的预订**时，这条链路还剩多少容量。它只反映别人的流量和链路故障，由 telemetry 写入。
+- `own`：我们自己的 booking 之和。reserve 时立即写入（pending），commit 时只改状态（confirmed），数字不变。
+- `available = observed − own`，quote 和 reserve 都按 available 来算。
+
+test1 commit 之后，L2 的账本是这样的：
+
+```
+09:00–09:15   observed 40   own  40   available  0     ← T2 的 40 Gbps
+09:15–12:00   observed 40   own   0   available 40
+12:00–13:15   observed 100  own 100   available  0     ← T1 的 100 Gbps
+```
+
+我在这个状态下实际又发了一次 quote（T3，1 TB）。主路径给出的是 09:15@40 和 13:15@100，正好避开了我们自己占用的两个时间槽；另外还给出走绕行路径、09:00 开始的方案。新的 quote 能立即看到我们的占用，靠的是 own，不需要动 observed。
+
+**为什么不能在 commit 后去改 observed**：如果 commit 后把 observed 减掉 40，同一份占用就同时出现在 observed 和 own 两层里，扣了两次，available 会变成 −40，被截成 0。这就是 3a 定这条约定的原因：真实的 telemetry 测到的是链路的总利用率，其中包括我们自己正在跑的流量，接入时要由 adapter 把我们自己的那部分加回去，让 observed 始终"不含我们"。
+
+**被动更新确实有问题，但出在别处：别人的流量发生变化时。** observed 目前只在两种情况下更新：quote 或 reserve 时，发现观测值已过期（超过 5 分钟有效期），就去拉一次。在有效期内，别人的流量变了，账本是不知道的。5a demo 的 test3 演示的正是这种情况：09:01 时观测值还没过期，账本以为够用，结果被 SENSE 拒绝，只好整组回滚。现在的兜底是 SENSE 的准入检查。要真正解决，需要 telemetry 主动推送变化事件（10/22 与 SB 讨论接口时列为待定项"push 事件内容"），或者缩短有效期。这属于和 telemetry agent 对接的接口问题（第 11 步）。
+
+---
+
+> "09:00–09:15   observed 40   own  40   available  0     ← T2 的 40 Gbps" 对于这种情况，如果telemetry更新了，是不是会变成：09:00–09:15   observed 0   own  0   available  0     ← T2 的 40 Gbps
+
+不会。telemetry 更新以后，这一行仍然是 `observed 40   own 40   available 0`，三个数都不变。
+
+**own 不会被 telemetry 改动。** own 是我们自己 booking 的总和，只由我们自己的动作改变：reserve 时增加；commit 时不变；rollback、release 时减少；之后的 TTL 回收也会让它减少。telemetry 只写 observed。如果 own 变成 0，账本就"忘了"T2 的预订，release 时也就找不到该退还的东西了。
+
+**observed 也不会变成 0。** 按接口约定，telemetry 给出的是"不算我们自己流量"时的剩余容量。T2 在 09:00–09:03:20 实际在传，链路的总占用是 60（别人）+ 40（我们），但 telemetry 要报的是 100 − 60 = 40。mock 就是这么实现的：`MockNetwork.segments()` 在默认的 `include_ours=False` 下只扣 background，不扣我们的 SENSE 实例。我实测了一下：test1 commit 之后，在 09:06 强制刷新一次 telemetry，L2 在 09:00–09:15 这个时间槽前后都是 `observed 40   own 40   available 0`。
+
+你写的那一行，`observed 0` 其实是"把我们的流量也算进 observed"。这种情况下 own 必须保持 40（理由见上），结果就成了 `observed 0, own 40, available 0`，同一个 40 Gbps 被扣了两次。这个时间槽本来就满，看不出差别；换成一个 own 不满的时间槽，可用容量就会被少算。所以接真实 telemetry 时，要由 adapter 把我们自己的流量加回去。真实环境里怎么从测到的总利用率中分辨出"哪些是我们的"，是 PLAN 里已经记下的接口问题（observed 口径一条），到第 11 步对接 telemetry agent 时要落实。

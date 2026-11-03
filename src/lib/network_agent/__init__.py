@@ -18,7 +18,9 @@ Planned modules:
     estimate.py    RateModel: predicted finish p50 / p95 (hook for the step-9 calibration)
     circuit.py     placement → SENSE circuit and ServiceIntent (step 5a: one new circuit per offer)
     context.py     runtime context shared by the three graphs (ledger, topology, external interfaces)
-    graphs/        graph A: protocol.py (route_verb, the entry point) + quote.py, reserve.py, commit.py;
+    reclaim.py     giving back what we hold: shared by release and the expiry sweep
+    graphs/        graph A: protocol.py (the entry point: dedupe, sweep, route, remember) + quote.py, reserve.py, commit.py,
+                   release.py, modify.py;
                    runtime (graph B), learning (graph C)
 
 Conventions:

@@ -1792,57 +1792,67 @@ html&gt;body{padding:0}&lt;/style&gt;
     #protocol-graph-a .graph-header { display: flex; align-items: start; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-bottom: 20px; padding-right: 80px; }
     #protocol-graph-a h2, #protocol-graph-a h3 { margin: 0; }
     #protocol-graph-a .graph-controls { margin-bottom: 20px; }
-    #protocol-graph-a .entry { text-align: center; display: grid; justify-items: center; }
+    #protocol-graph-a .entry, #protocol-graph-a .exit { text-align: center; display: grid; justify-items: center; }
     #protocol-graph-a .terminal { padding: 5px 22px; border: 1px solid var(--border); border-radius: 24px; color: var(--foreground); }
     #protocol-graph-a .step { position: relative; padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px; text-align: center; background: color-mix(in srgb, var(--viz-series-1) 7%, transparent); }
     #protocol-graph-a .step code { display: block; color: var(--foreground); background: transparent; overflow-wrap: anywhere; }
     #protocol-graph-a .step .step-label { display: block; margin-top: 3px; }
     #protocol-graph-a .step .condition { display: block; margin-top: 4px; color: var(--muted-foreground); }
     #protocol-graph-a .step .hook { display: block; margin-top: 4px; color: var(--muted-foreground); font-style: italic; }
-    #protocol-graph-a .entry .step { min-width: 200px; }
+    #protocol-graph-a .entry .step, #protocol-graph-a .exit .step { width: min(420px, 100%); box-sizing: border-box; }
+    #protocol-graph-a .entry .shared, #protocol-graph-a .exit .shared { background: color-mix(in srgb, var(--viz-series-5) 9%, transparent); }
     #protocol-graph-a .arrow { text-align: center; color: var(--muted-foreground); height: 25px; display: grid; place-items: center; }
     #protocol-graph-a .split { display: block; width: 100%; height: 34px; color: var(--muted-foreground); }
-    #protocol-graph-a .lanes { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 24px; align-items: start; }
-    #protocol-graph-a .lane { min-width: 0; }
-    #protocol-graph-a .lane-heading { text-align: center; margin-bottom: 14px; display: grid; gap: 4px; }
+    #protocol-graph-a .lanes { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 12px; align-items: stretch; }
+    #protocol-graph-a .lane { min-width: 0; display: flex; flex-direction: column; }
+    #protocol-graph-a .lane-heading { text-align: center; margin-bottom: 14px; display: grid; gap: 4px; align-content: start; min-height: 76px; }
     #protocol-graph-a .quote .step { background: color-mix(in srgb, var(--viz-series-2) 8%, transparent); }
+    #protocol-graph-a .planned .step:not(.optional) { background: color-mix(in srgb, var(--viz-series-6) 8%, transparent); }
     #protocol-graph-a .optional { border-style: dashed; background: transparent !important; }
-    #protocol-graph-a .outcomes { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px; }
+    #protocol-graph-a .outcomes { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 8px; }
     #protocol-graph-a .outcome { min-width: 0; text-align: center; display: flex; flex-direction: column; }
-    #protocol-graph-a .outcome .step { flex: 1; }
+    #protocol-graph-a .outcome .step { flex: 1; padding: 8px 5px; }
+    #protocol-graph-a .outcome code { font-size: .74em; white-space: nowrap; overflow-wrap: normal; }
     #protocol-graph-a .outcome-label { display: block; margin-bottom: 7px; }
-    #protocol-graph-a .success .step { background: color-mix(in srgb, var(--viz-series-3) 10%, transparent); }
-    #protocol-graph-a .failure .step { background: color-mix(in srgb, var(--viz-series-4) 8%, transparent); }
-    #protocol-graph-a .lane .terminal { width: max-content; margin: 0 auto; }
+    #protocol-graph-a .success .step { background: color-mix(in srgb, var(--viz-series-3) 10%, transparent) !important; }
+    #protocol-graph-a .failure .step:not(.optional) { background: color-mix(in srgb, var(--viz-series-4) 8%, transparent) !important; }
+    #protocol-graph-a .drop { flex: 1; min-height: 25px; background: linear-gradient(var(--muted-foreground), var(--muted-foreground)) center / 1px 100% no-repeat; }
     #protocol-graph-a .merge { height: 30px; display: block; width: 100%; color: var(--muted-foreground); }
     #protocol-graph-a .notes { margin-top: 22px; display: grid; gap: 6px; color: var(--muted-foreground); }
     #protocol-graph-a .legend { margin-top: 14px; display: flex; gap: 8px 20px; flex-wrap: wrap; color: var(--muted-foreground); }
     #protocol-graph-a .legend span { display: inline-flex; align-items: center; gap: 7px; }
     #protocol-graph-a .legend-mark { width: 20px; height: 13px; border: 1px solid var(--border); border-radius: 3px; background: color-mix(in srgb, var(--viz-series-1) 7%, transparent); }
+    #protocol-graph-a .legend-mark.shared { background: color-mix(in srgb, var(--viz-series-5) 9%, transparent); }
+    #protocol-graph-a .legend-mark.planned { background: color-mix(in srgb, var(--viz-series-6) 8%, transparent); }
     #protocol-graph-a .legend-mark.optional { border-style: dashed; background: transparent; }
     #protocol-graph-a [hidden] { display: none !important; }
+    #protocol-graph-a .single-only { display: none; }
+    #protocol-graph-a[data-view=&quot;single&quot;] .single-only { display: grid; }
     #protocol-graph-a[data-view=&quot;single&quot;] .lanes { grid-template-columns: minmax(0, 1fr); max-width: 460px; margin: 0 auto; }
     #protocol-graph-a[data-view=&quot;single&quot;] .split.fan { display: none; }
     #protocol-graph-a[data-view=&quot;single&quot;] .entry { margin-bottom: 25px; }
-    @media (max-width: 900px) {
+    @media (max-width: 1000px) {
       #protocol-graph-a .graph-header { padding-right: 0; }
-      #protocol-graph-a .lanes { grid-template-columns: minmax(0, 1fr); gap: 32px; }
+      #protocol-graph-a .lanes { grid-template-columns: minmax(0, 1fr); gap: 32px; max-width: 460px; margin: 0 auto; }
       #protocol-graph-a .split.fan { display: none; }
+      #protocol-graph-a .single-only { display: grid; }
       #protocol-graph-a .entry { margin-bottom: 24px; }
     }
   &lt;/style&gt;
 
   &lt;div class=&quot;graph-header&quot;&gt;
     &lt;h2&gt;Figure A · Protocol Graph&lt;/h2&gt;
-    &lt;span class=&quot;text-small&quot;&gt;slides 12 / 19 / 23 · revised 2026-10-30 for step 5a&lt;/span&gt;
+    &lt;span class=&quot;text-small&quot;&gt;slides 12 / 19 / 23 · revised 2026-11-01 for step 5b (design)&lt;/span&gt;
   &lt;/div&gt;
   &lt;div class=&quot;viz-controls graph-controls&quot;&gt;
     &lt;label class=&quot;form-label&quot; for=&quot;protocol-verb&quot;&gt;Select a command
       &lt;select class=&quot;form-select&quot; id=&quot;protocol-verb&quot;&gt;
-        &lt;option value=&quot;all&quot;&gt;All three commands&lt;/option&gt;
+        &lt;option value=&quot;all&quot;&gt;All five commands&lt;/option&gt;
         &lt;option value=&quot;quote&quot;&gt;quote · Request offers&lt;/option&gt;
         &lt;option value=&quot;reserve&quot;&gt;reserve · Reserve tentatively (slides: hold)&lt;/option&gt;
         &lt;option value=&quot;commit&quot;&gt;commit · Confirm reservation&lt;/option&gt;
+        &lt;option value=&quot;release&quot;&gt;release · Give back a reserve or commitment&lt;/option&gt;
+        &lt;option value=&quot;modify&quot;&gt;modify · Change rate or time of one item&lt;/option&gt;
       &lt;/select&gt;
     &lt;/label&gt;
   &lt;/div&gt;
@@ -1850,13 +1860,17 @@ html&gt;body{padding:0}&lt;/style&gt;
   &lt;div class=&quot;entry&quot;&gt;
     &lt;div class=&quot;terminal&quot;&gt;START&lt;/div&gt;
     &lt;div class=&quot;arrow&quot; aria-hidden=&quot;true&quot;&gt;↓&lt;/div&gt;
-    &lt;div class=&quot;step&quot;&gt;&lt;code&gt;route_verb&lt;/code&gt;&lt;span class=&quot;step-label&quot;&gt;Route by command&lt;/span&gt;&lt;/div&gt;
+    &lt;div class=&quot;step shared&quot;&gt;&lt;code&gt;dedupe_request&lt;/code&gt;&lt;span class=&quot;step-label&quot;&gt;Same (verb, request_id) answered before?&lt;/span&gt;&lt;span class=&quot;condition text-small&quot;&gt;same body → return the cached reply → END · different body → invalid_request&lt;/span&gt;&lt;/div&gt;
+    &lt;div class=&quot;arrow&quot; aria-hidden=&quot;true&quot;&gt;↓&lt;/div&gt;
+    &lt;div class=&quot;step shared&quot;&gt;&lt;code&gt;sweep_expired&lt;/code&gt;&lt;span class=&quot;step-label&quot;&gt;Reclaim reserves past their TTL (state → expired), retry the cancel of orphan instances, drop offers of expired quotes&lt;/span&gt;&lt;span class=&quot;hook text-small&quot;&gt;hook: a timer may call the same function&lt;/span&gt;&lt;/div&gt;
+    &lt;div class=&quot;arrow&quot; aria-hidden=&quot;true&quot;&gt;↓&lt;/div&gt;
+    &lt;div class=&quot;step&quot;&gt;&lt;code&gt;route_verb&lt;/code&gt;&lt;span class=&quot;step-label&quot;&gt;Route by command&lt;/span&gt;&lt;span class=&quot;condition text-small&quot;&gt;unknown verb → invalid_request&lt;/span&gt;&lt;/div&gt;
   &lt;/div&gt;
   &lt;svg class=&quot;split fan&quot; viewBox=&quot;0 0 100 34&quot; preserveAspectRatio=&quot;none&quot; aria-hidden=&quot;true&quot;&gt;
-    &lt;path d=&quot;M50 0V34 M16.67 34V12H83.33V34&quot; fill=&quot;none&quot; stroke=&quot;currentColor&quot; stroke-width=&quot;1&quot; vector-effect=&quot;non-scaling-stroke&quot;/&gt;
+    &lt;path d=&quot;M50 0V34 M10 34V12H90V34 M30 12V34 M70 12V34&quot; fill=&quot;none&quot; stroke=&quot;currentColor&quot; stroke-width=&quot;1&quot; vector-effect=&quot;non-scaling-stroke&quot;/&gt;
   &lt;/svg&gt;
 
-  &lt;div class=&quot;lanes&quot; role=&quot;group&quot; aria-label=&quot;quote, reserve and commit branches; follow arrows from top to bottom&quot;&gt;
+  &lt;div class=&quot;lanes&quot; role=&quot;group&quot; aria-label=&quot;quote, reserve, commit, release and modify branches; follow arrows from top to bottom&quot;&gt;
     &lt;section class=&quot;lane quote&quot; id=&quot;protocol-quote&quot;&gt;
       &lt;div class=&quot;lane-heading&quot;&gt;&lt;h3&gt;quote&lt;/h3&gt;&lt;span class=&quot;text-small&quot;&gt;Read-only · No SENSE call · step 4&lt;/span&gt;&lt;/div&gt;
       &lt;div class=&quot;step&quot;&gt;&lt;code&gt;validate_bundle&lt;/code&gt;&lt;span class=&quot;step-label&quot;&gt;Validate the request bundle&lt;/span&gt;&lt;span class=&quot;condition text-small&quot;&gt;invalid → respond(error)&lt;/span&gt;&lt;/div&gt;
@@ -1867,68 +1881,111 @@ html&gt;body{padding:0}&lt;/style&gt;
       &lt;div class=&quot;arrow&quot; aria-hidden=&quot;true&quot;&gt;↓&lt;/div&gt;
       &lt;div class=&quot;step&quot;&gt;&lt;code&gt;estimate_finish&lt;/code&gt;&lt;span class=&quot;step-label&quot;&gt;Estimate p50 / p95 finish times&lt;/span&gt;&lt;/div&gt;
       &lt;div class=&quot;arrow&quot; aria-hidden=&quot;true&quot;&gt;↓&lt;/div&gt;
-      &lt;div class=&quot;step&quot;&gt;&lt;code&gt;respond&lt;/code&gt;&lt;span class=&quot;step-label&quot;&gt;Return offers; remember them in offer_book&lt;/span&gt;&lt;/div&gt;
-      &lt;div class=&quot;arrow&quot; aria-hidden=&quot;true&quot;&gt;↓&lt;/div&gt;
-      &lt;div class=&quot;terminal&quot;&gt;END&lt;/div&gt;
+      &lt;div class=&quot;step&quot;&gt;&lt;code&gt;respond&lt;/code&gt;&lt;span class=&quot;step-label&quot;&gt;Return offers; remember them in offer_book&lt;/span&gt;&lt;span class=&quot;condition text-small&quot;&gt;offers valid until valid_until = now + quote_ttl_seconds&lt;/span&gt;&lt;/div&gt;
+      &lt;div class=&quot;drop&quot; aria-hidden=&quot;true&quot;&gt;&lt;/div&gt;
     &lt;/section&gt;
 
     &lt;section class=&quot;lane&quot; id=&quot;protocol-reserve&quot;&gt;
       &lt;div class=&quot;lane-heading&quot;&gt;&lt;h3&gt;reserve&lt;/h3&gt;&lt;span class=&quot;text-small&quot;&gt;Slides: hold · Debits the ledger · step 5a&lt;/span&gt;&lt;/div&gt;
-      &lt;div class=&quot;step&quot;&gt;&lt;code&gt;validate_reserve&lt;/code&gt;&lt;span class=&quot;step-label&quot;&gt;Look up the chosen offers&lt;/span&gt;&lt;span class=&quot;condition text-small&quot;&gt;unknown offer / bad request → respond(error)&lt;/span&gt;&lt;/div&gt;
+      &lt;div class=&quot;step&quot;&gt;&lt;code&gt;validate_reserve&lt;/code&gt;&lt;span class=&quot;step-label&quot;&gt;Look up the chosen offers&lt;/span&gt;&lt;span class=&quot;condition text-small&quot;&gt;unknown → not_found · quote expired → expired · bad request → invalid_request&lt;/span&gt;&lt;/div&gt;
       &lt;div class=&quot;arrow&quot; aria-hidden=&quot;true&quot;&gt;↓&lt;/div&gt;
-      &lt;div class=&quot;step&quot;&gt;&lt;code&gt;recheck_capacity&lt;/code&gt;&lt;span class=&quot;step-label&quot;&gt;Refresh stale observations, recheck each offer&#x27;s path&lt;/span&gt;&lt;span class=&quot;condition text-small&quot;&gt;capacity gone → respond(conflict)&lt;/span&gt;&lt;/div&gt;
+      &lt;div class=&quot;step&quot;&gt;&lt;code&gt;recheck_capacity&lt;/code&gt;&lt;span class=&quot;step-label&quot;&gt;Refresh stale observations on the offers&#x27; paths&lt;/span&gt;&lt;/div&gt;
       &lt;div class=&quot;arrow&quot; aria-hidden=&quot;true&quot;&gt;↓&lt;/div&gt;
-      &lt;div class=&quot;step&quot;&gt;&lt;code&gt;place_on_circuit&lt;/code&gt;&lt;span class=&quot;step-label&quot;&gt;Choose the circuit: one new circuit per offer&lt;/span&gt;&lt;span class=&quot;hook text-small&quot;&gt;hooks: warm-circuit reuse, alternate path, priority / preemption&lt;/span&gt;&lt;/div&gt;
+      &lt;div class=&quot;step&quot;&gt;&lt;code&gt;place_on_circuit&lt;/code&gt;&lt;span class=&quot;step-label&quot;&gt;One new circuit per offer&lt;/span&gt;&lt;span class=&quot;hook text-small&quot;&gt;hooks: warm-circuit reuse, alternate path, priority / preemption&lt;/span&gt;&lt;/div&gt;
       &lt;div class=&quot;arrow&quot; aria-hidden=&quot;true&quot;&gt;↓&lt;/div&gt;
-      &lt;div class=&quot;step&quot;&gt;&lt;code&gt;compile_intent&lt;/code&gt;&lt;span class=&quot;step-label&quot;&gt;Compile one ServiceIntent per offer&lt;/span&gt;&lt;/div&gt;
+      &lt;div class=&quot;step&quot;&gt;&lt;code&gt;compile_intent&lt;/code&gt;&lt;span class=&quot;step-label&quot;&gt;One ServiceIntent per offer&lt;/span&gt;&lt;/div&gt;
       &lt;div class=&quot;arrow&quot; aria-hidden=&quot;true&quot;&gt;↓&lt;/div&gt;
-      &lt;div class=&quot;step&quot;&gt;&lt;code&gt;ledger_pending&lt;/code&gt;&lt;span class=&quot;step-label&quot;&gt;Debit the whole bundle in the own layer&lt;/span&gt;&lt;span class=&quot;condition text-small&quot;&gt;Later quotes see it at once&lt;/span&gt;&lt;/div&gt;
+      &lt;div class=&quot;step&quot;&gt;&lt;code&gt;ledger_pending&lt;/code&gt;&lt;span class=&quot;step-label&quot;&gt;Debit the whole bundle in the own layer&lt;/span&gt;&lt;span class=&quot;condition text-small&quot;&gt;no room → respond(conflict)&lt;/span&gt;&lt;/div&gt;
       &lt;div class=&quot;arrow&quot; aria-hidden=&quot;true&quot;&gt;↓&lt;/div&gt;
       &lt;div class=&quot;step&quot;&gt;&lt;code&gt;sense_propagate&lt;/code&gt;&lt;span class=&quot;step-label&quot;&gt;SENSE propagate, one instance per offer&lt;/span&gt;&lt;span class=&quot;condition text-small&quot;&gt;All-or-nothing for the bundle&lt;/span&gt;&lt;/div&gt;
       &lt;svg class=&quot;split&quot; viewBox=&quot;0 0 100 34&quot; preserveAspectRatio=&quot;none&quot; aria-hidden=&quot;true&quot;&gt;
         &lt;path d=&quot;M50 0V12 M25 34V12H75V34&quot; fill=&quot;none&quot; stroke=&quot;currentColor&quot; stroke-width=&quot;1&quot; vector-effect=&quot;non-scaling-stroke&quot;/&gt;
       &lt;/svg&gt;
       &lt;div class=&quot;outcomes&quot;&gt;
-        &lt;div class=&quot;outcome success&quot;&gt;&lt;span class=&quot;outcome-label&quot;&gt;ok · Success&lt;/span&gt;&lt;div class=&quot;step&quot;&gt;&lt;code&gt;record_reserve&lt;/code&gt;&lt;span class=&quot;step-label&quot;&gt;Store the reserve with its TTL&lt;/span&gt;&lt;/div&gt;&lt;/div&gt;
-        &lt;div class=&quot;outcome failure&quot;&gt;&lt;span class=&quot;outcome-label&quot;&gt;fail · Failure&lt;/span&gt;&lt;div class=&quot;step&quot;&gt;&lt;code&gt;ledger_rollback&lt;/code&gt;&lt;span class=&quot;step-label&quot;&gt;Cancel propagated instances, roll back the bundle&lt;/span&gt;&lt;/div&gt;&lt;/div&gt;
+        &lt;div class=&quot;outcome success&quot;&gt;&lt;span class=&quot;outcome-label&quot;&gt;ok&lt;/span&gt;&lt;div class=&quot;step&quot;&gt;&lt;code&gt;record_reserve&lt;/code&gt;&lt;span class=&quot;step-label&quot;&gt;Store the reserve with its TTL&lt;/span&gt;&lt;/div&gt;&lt;/div&gt;
+        &lt;div class=&quot;outcome failure&quot;&gt;&lt;span class=&quot;outcome-label&quot;&gt;fail&lt;/span&gt;&lt;div class=&quot;step&quot;&gt;&lt;code&gt;ledger_rollback&lt;/code&gt;&lt;span class=&quot;step-label&quot;&gt;Cancel created instances, roll back the bundle&lt;/span&gt;&lt;span class=&quot;condition text-small&quot;&gt;a failed cancel → orphan, keeps its booking until the sweep cancels it&lt;/span&gt;&lt;/div&gt;&lt;/div&gt;
       &lt;/div&gt;
       &lt;svg class=&quot;merge&quot; viewBox=&quot;0 0 100 30&quot; preserveAspectRatio=&quot;none&quot; aria-hidden=&quot;true&quot;&gt;
         &lt;path d=&quot;M25 0V12H75V0 M50 12V30&quot; fill=&quot;none&quot; stroke=&quot;currentColor&quot; stroke-width=&quot;1&quot; vector-effect=&quot;non-scaling-stroke&quot;/&gt;
       &lt;/svg&gt;
       &lt;div class=&quot;step&quot;&gt;&lt;code&gt;respond&lt;/code&gt;&lt;span class=&quot;step-label&quot;&gt;Return ReserveAck or error&lt;/span&gt;&lt;/div&gt;
-      &lt;div class=&quot;arrow&quot; aria-hidden=&quot;true&quot;&gt;↓&lt;/div&gt;
-      &lt;div class=&quot;terminal&quot;&gt;END&lt;/div&gt;
+      &lt;div class=&quot;drop&quot; aria-hidden=&quot;true&quot;&gt;&lt;/div&gt;
     &lt;/section&gt;
 
     &lt;section class=&quot;lane&quot; id=&quot;protocol-commit&quot;&gt;
       &lt;div class=&quot;lane-heading&quot;&gt;&lt;h3&gt;commit&lt;/h3&gt;&lt;span class=&quot;text-small&quot;&gt;Confirms a reserve · step 5a&lt;/span&gt;&lt;/div&gt;
-      &lt;div class=&quot;step&quot;&gt;&lt;code&gt;validate_commit&lt;/code&gt;&lt;span class=&quot;step-label&quot;&gt;Look up the reserve&lt;/span&gt;&lt;span class=&quot;condition text-small&quot;&gt;unknown → not_found · past TTL → expired&lt;/span&gt;&lt;/div&gt;
+      &lt;div class=&quot;step&quot;&gt;&lt;code&gt;validate_commit&lt;/code&gt;&lt;span class=&quot;step-label&quot;&gt;Look up the reserve&lt;/span&gt;&lt;span class=&quot;condition text-small&quot;&gt;unknown → not_found · past TTL → expired · released → conflict&lt;/span&gt;&lt;/div&gt;
       &lt;div class=&quot;arrow&quot; aria-hidden=&quot;true&quot;&gt;↓&lt;/div&gt;
-      &lt;div class=&quot;step&quot;&gt;&lt;code&gt;sense_commit&lt;/code&gt;&lt;span class=&quot;step-label&quot;&gt;SENSE commit for each instance&lt;/span&gt;&lt;/div&gt;
+      &lt;div class=&quot;step&quot;&gt;&lt;code&gt;sense_commit&lt;/code&gt;&lt;span class=&quot;step-label&quot;&gt;SENSE commit for each instance not yet committed&lt;/span&gt;&lt;/div&gt;
       &lt;svg class=&quot;split&quot; viewBox=&quot;0 0 100 34&quot; preserveAspectRatio=&quot;none&quot; aria-hidden=&quot;true&quot;&gt;
         &lt;path d=&quot;M50 0V12 M25 34V12H75V34&quot; fill=&quot;none&quot; stroke=&quot;currentColor&quot; stroke-width=&quot;1&quot; vector-effect=&quot;non-scaling-stroke&quot;/&gt;
       &lt;/svg&gt;
       &lt;div class=&quot;outcomes&quot;&gt;
-        &lt;div class=&quot;outcome success&quot;&gt;&lt;span class=&quot;outcome-label&quot;&gt;ok · Success&lt;/span&gt;&lt;div class=&quot;step&quot;&gt;&lt;code&gt;ledger_confirm&lt;/code&gt;&lt;span class=&quot;step-label&quot;&gt;Confirm bookings, build Commitments with EndpointBinding&lt;/span&gt;&lt;/div&gt;&lt;/div&gt;
-        &lt;div class=&quot;outcome failure&quot;&gt;&lt;span class=&quot;outcome-label&quot;&gt;fail · Failure&lt;/span&gt;&lt;div class=&quot;step optional&quot;&gt;&lt;span class=&quot;step-label&quot;&gt;No ledger change: the reserve stays, commit can be retried&lt;/span&gt;&lt;/div&gt;&lt;/div&gt;
+        &lt;div class=&quot;outcome success&quot;&gt;&lt;span class=&quot;outcome-label&quot;&gt;ok&lt;/span&gt;&lt;div class=&quot;step&quot;&gt;&lt;code&gt;ledger_confirm&lt;/code&gt;&lt;span class=&quot;step-label&quot;&gt;Confirm bookings, build Commitments with EndpointBinding&lt;/span&gt;&lt;/div&gt;&lt;/div&gt;
+        &lt;div class=&quot;outcome failure&quot;&gt;&lt;span class=&quot;outcome-label&quot;&gt;fail&lt;/span&gt;&lt;div class=&quot;step optional&quot;&gt;&lt;span class=&quot;step-label&quot;&gt;No ledger change; commit can be retried&lt;/span&gt;&lt;/div&gt;&lt;/div&gt;
       &lt;/div&gt;
       &lt;svg class=&quot;merge&quot; viewBox=&quot;0 0 100 30&quot; preserveAspectRatio=&quot;none&quot; aria-hidden=&quot;true&quot;&gt;
         &lt;path d=&quot;M25 0V12H75V0 M50 12V30&quot; fill=&quot;none&quot; stroke=&quot;currentColor&quot; stroke-width=&quot;1&quot; vector-effect=&quot;non-scaling-stroke&quot;/&gt;
       &lt;/svg&gt;
       &lt;div class=&quot;step&quot;&gt;&lt;code&gt;respond&lt;/code&gt;&lt;span class=&quot;step-label&quot;&gt;Return CommitAck or error&lt;/span&gt;&lt;/div&gt;
+      &lt;div class=&quot;drop&quot; aria-hidden=&quot;true&quot;&gt;&lt;/div&gt;
+    &lt;/section&gt;
+
+    &lt;section class=&quot;lane&quot; id=&quot;protocol-release&quot;&gt;
+      &lt;div class=&quot;lane-heading&quot;&gt;&lt;h3&gt;release&lt;/h3&gt;&lt;span class=&quot;text-small&quot;&gt;Reserved or committed · step 5b&lt;/span&gt;&lt;/div&gt;
+      &lt;div class=&quot;step&quot;&gt;&lt;code&gt;validate_release&lt;/code&gt;&lt;span class=&quot;step-label&quot;&gt;Look up the reserve and the items to release (all if none given)&lt;/span&gt;&lt;span class=&quot;condition text-small&quot;&gt;unknown → not_found · already released → conflict&lt;/span&gt;&lt;/div&gt;
       &lt;div class=&quot;arrow&quot; aria-hidden=&quot;true&quot;&gt;↓&lt;/div&gt;
-      &lt;div class=&quot;terminal&quot;&gt;END&lt;/div&gt;
+      &lt;div class=&quot;step&quot;&gt;&lt;code&gt;sense_cancel&lt;/code&gt;&lt;span class=&quot;step-label&quot;&gt;SENSE cancel for each item&lt;/span&gt;&lt;span class=&quot;condition text-small&quot;&gt;a failed cancel keeps its booking (still held in the network) → sense_failure, may retry&lt;/span&gt;&lt;/div&gt;
+      &lt;div class=&quot;arrow&quot; aria-hidden=&quot;true&quot;&gt;↓&lt;/div&gt;
+      &lt;div class=&quot;step&quot;&gt;&lt;code&gt;ledger_release&lt;/code&gt;&lt;span class=&quot;step-label&quot;&gt;Return the bookings of cancelled items&lt;/span&gt;&lt;span class=&quot;condition text-small&quot;&gt;pending → rollback · confirmed → release&lt;/span&gt;&lt;/div&gt;
+      &lt;div class=&quot;arrow&quot; aria-hidden=&quot;true&quot;&gt;↓&lt;/div&gt;
+      &lt;div class=&quot;step&quot;&gt;&lt;code&gt;respond&lt;/code&gt;&lt;span class=&quot;step-label&quot;&gt;Return ReleaseAck or error&lt;/span&gt;&lt;/div&gt;
+      &lt;div class=&quot;drop&quot; aria-hidden=&quot;true&quot;&gt;&lt;/div&gt;
+    &lt;/section&gt;
+
+    &lt;section class=&quot;lane&quot; id=&quot;protocol-modify&quot;&gt;
+      &lt;div class=&quot;lane-heading&quot;&gt;&lt;h3&gt;modify&lt;/h3&gt;&lt;span class=&quot;text-small&quot;&gt;One item, same path and circuit · step 5b&lt;/span&gt;&lt;/div&gt;
+      &lt;div class=&quot;step&quot;&gt;&lt;code&gt;validate_modify&lt;/code&gt;&lt;span class=&quot;step-label&quot;&gt;Look up the item; check the new rate profile&lt;/span&gt;&lt;span class=&quot;condition text-small&quot;&gt;unknown → not_found · past TTL → expired · released → conflict · one segment; a started item keeps its start&lt;/span&gt;&lt;span class=&quot;hook text-small&quot;&gt;path change = reserve new + release old (make-before-break)&lt;/span&gt;&lt;/div&gt;
+      &lt;div class=&quot;arrow&quot; aria-hidden=&quot;true&quot;&gt;↓&lt;/div&gt;
+      &lt;div class=&quot;step&quot;&gt;&lt;code&gt;recheck_capacity&lt;/code&gt;&lt;span class=&quot;step-label&quot;&gt;Refresh stale observations on the new time range&lt;/span&gt;&lt;/div&gt;
+      &lt;div class=&quot;arrow&quot; aria-hidden=&quot;true&quot;&gt;↓&lt;/div&gt;
+      &lt;div class=&quot;step&quot;&gt;&lt;code&gt;ledger_replace&lt;/code&gt;&lt;span class=&quot;step-label&quot;&gt;Swap the old booking for the new one atomically; the old one counts as free&lt;/span&gt;&lt;span class=&quot;condition text-small&quot;&gt;no room → respond(conflict)&lt;/span&gt;&lt;/div&gt;
+      &lt;div class=&quot;arrow&quot; aria-hidden=&quot;true&quot;&gt;↓&lt;/div&gt;
+      &lt;div class=&quot;step&quot;&gt;&lt;code&gt;sense_modify&lt;/code&gt;&lt;span class=&quot;step-label&quot;&gt;SENSE modify the instance&lt;/span&gt;&lt;/div&gt;
+      &lt;svg class=&quot;split&quot; viewBox=&quot;0 0 100 34&quot; preserveAspectRatio=&quot;none&quot; aria-hidden=&quot;true&quot;&gt;
+        &lt;path d=&quot;M50 0V12 M25 34V12H75V34&quot; fill=&quot;none&quot; stroke=&quot;currentColor&quot; stroke-width=&quot;1&quot; vector-effect=&quot;non-scaling-stroke&quot;/&gt;
+      &lt;/svg&gt;
+      &lt;div class=&quot;outcomes&quot;&gt;
+        &lt;div class=&quot;outcome success&quot;&gt;&lt;span class=&quot;outcome-label&quot;&gt;ok&lt;/span&gt;&lt;div class=&quot;step&quot;&gt;&lt;code&gt;record_modify&lt;/code&gt;&lt;span class=&quot;step-label&quot;&gt;Update the item, and its Commitment if committed&lt;/span&gt;&lt;/div&gt;&lt;/div&gt;
+        &lt;div class=&quot;outcome failure&quot;&gt;&lt;span class=&quot;outcome-label&quot;&gt;fail&lt;/span&gt;&lt;div class=&quot;step&quot;&gt;&lt;code&gt;ledger_restore&lt;/code&gt;&lt;span class=&quot;step-label&quot;&gt;Put the old profile back&lt;/span&gt;&lt;/div&gt;&lt;/div&gt;
+      &lt;/div&gt;
+      &lt;svg class=&quot;merge&quot; viewBox=&quot;0 0 100 30&quot; preserveAspectRatio=&quot;none&quot; aria-hidden=&quot;true&quot;&gt;
+        &lt;path d=&quot;M25 0V12H75V0 M50 12V30&quot; fill=&quot;none&quot; stroke=&quot;currentColor&quot; stroke-width=&quot;1&quot; vector-effect=&quot;non-scaling-stroke&quot;/&gt;
+      &lt;/svg&gt;
+      &lt;div class=&quot;step&quot;&gt;&lt;code&gt;respond&lt;/code&gt;&lt;span class=&quot;step-label&quot;&gt;Return ModifyAck or error&lt;/span&gt;&lt;/div&gt;
+      &lt;div class=&quot;drop&quot; aria-hidden=&quot;true&quot;&gt;&lt;/div&gt;
     &lt;/section&gt;
   &lt;/div&gt;
 
+  &lt;svg class=&quot;split fan&quot; viewBox=&quot;0 0 100 34&quot; preserveAspectRatio=&quot;none&quot; aria-hidden=&quot;true&quot;&gt;
+    &lt;path d=&quot;M10 0V12H90V0 M30 0V12 M50 0V34 M70 0V12&quot; fill=&quot;none&quot; stroke=&quot;currentColor&quot; stroke-width=&quot;1&quot; vector-effect=&quot;non-scaling-stroke&quot;/&gt;
+  &lt;/svg&gt;
+  &lt;div class=&quot;exit&quot;&gt;
+    &lt;div class=&quot;arrow single-only&quot; aria-hidden=&quot;true&quot;&gt;↓&lt;/div&gt;
+    &lt;div class=&quot;step shared&quot;&gt;&lt;code&gt;remember_response&lt;/code&gt;&lt;span class=&quot;step-label&quot;&gt;Cache successful replies by (verb, request_id); quote uses quote_id&lt;/span&gt;&lt;span class=&quot;condition text-small&quot;&gt;errors are not cached, so a failed request can be retried with the same id&lt;/span&gt;&lt;/div&gt;
+    &lt;div class=&quot;arrow&quot; aria-hidden=&quot;true&quot;&gt;↓&lt;/div&gt;
+    &lt;div class=&quot;terminal&quot;&gt;END&lt;/div&gt;
+  &lt;/div&gt;
+
   &lt;div class=&quot;notes text-small&quot;&gt;
-    &lt;span&gt;Revised from the first draft: circuit choice and intent compilation moved from commit to reserve, because SENSE propagate already needs the full intent; the capacity recheck moved to reserve, before the ledger debit; a failed commit no longer rolls back the ledger.&lt;/span&gt;
-    &lt;span&gt;Step 5b (not designed yet): modify / release, automatic release when a reserve&#x27;s TTL expires, idempotent retries.&lt;/span&gt;
+    &lt;span&gt;Step 5a, revised from the first draft: circuit choice and intent compilation moved from commit to reserve, because SENSE propagate already needs the full intent; the capacity recheck moved to reserve, before the ledger debit; a failed commit no longer rolls back the ledger.&lt;/span&gt;
+    &lt;span&gt;Step 5b adds the shared entry and exit (dedupe_request, sweep_expired, remember_response) and the release and modify branches. TTL expiry is handled lazily: every message first sweeps what has expired. The sweep gives back expired reserves with the same functions as the release branch. Implemented 2026-11-01.&lt;/span&gt;
   &lt;/div&gt;
   &lt;div class=&quot;legend text-small&quot;&gt;
     &lt;span&gt;&lt;i class=&quot;legend-mark&quot; aria-hidden=&quot;true&quot;&gt;&lt;/i&gt;Execution node&lt;/span&gt;
+    &lt;span&gt;&lt;i class=&quot;legend-mark shared&quot; aria-hidden=&quot;true&quot;&gt;&lt;/i&gt;Shared by every command (5b)&lt;/span&gt;
     &lt;span&gt;&lt;i class=&quot;legend-mark optional&quot; aria-hidden=&quot;true&quot;&gt;&lt;/i&gt;No node on this branch&lt;/span&gt;
-    &lt;span&gt;&lt;i&gt;italic&lt;/i&gt;&amp;nbsp;Extension hook, not implemented in 5a&lt;/span&gt;
+    &lt;span&gt;&lt;i&gt;italic&lt;/i&gt;&amp;nbsp;Extension hook&lt;/span&gt;
   &lt;/div&gt;
   &lt;div class=&quot;sr-only&quot; id=&quot;protocol-path-summary&quot; aria-live=&quot;polite&quot;&gt;&lt;/div&gt;
 
@@ -1940,9 +1997,11 @@ html&gt;body{padding:0}&lt;/style&gt;
         quote: root.querySelector(&#x27;#protocol-quote&#x27;),
         reserve: root.querySelector(&#x27;#protocol-reserve&#x27;),
         commit: root.querySelector(&#x27;#protocol-commit&#x27;),
+        release: root.querySelector(&#x27;#protocol-release&#x27;),
+        modify: root.querySelector(&#x27;#protocol-modify&#x27;),
       };
       const summary = root.querySelector(&#x27;#protocol-path-summary&#x27;);
-      const verbs = [&#x27;all&#x27;, &#x27;quote&#x27;, &#x27;reserve&#x27;, &#x27;commit&#x27;];
+      const verbs = [&#x27;all&#x27;, ...Object.keys(lanes)];
 
       function apply(value) {
         const verb = verbs.includes(value) ? value : &#x27;all&#x27;;
@@ -1950,7 +2009,7 @@ html&gt;body{padding:0}&lt;/style&gt;
         root.dataset.verb = verb;
         root.dataset.view = verb === &#x27;all&#x27; ? &#x27;all&#x27; : &#x27;single&#x27;;
         for (const [name, lane] of Object.entries(lanes)) lane.hidden = verb !== &#x27;all&#x27; &amp;&amp; verb !== name;
-        summary.textContent = verb === &#x27;all&#x27; ? &#x27;Showing all three branches.&#x27; : `Showing the execution path for ${verb}.`;
+        summary.textContent = verb === &#x27;all&#x27; ? &#x27;Showing all five branches.&#x27; : `Showing the execution path for ${verb}.`;
       }
 
       const saved = window.openai?.widgetState;

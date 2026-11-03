@@ -6,10 +6,13 @@ from ..config import load_config
 from ..context import AgentContext
 from ..estimate import IdealRateModel
 from ..graphs.commit import build_commit_graph
+from ..graphs.modify import build_modify_graph
 from ..graphs.quote import build_quote_graph
+from ..graphs.release import build_release_graph
 from ..graphs.reserve import build_reserve_graph
 from ..ledger import CapacityLedger
-from ..schemas import CommitRequest, QuoteRequest, ReserveRequest, TimeWindow, TransferRequest
+from ..schemas import (CommitRequest, ModifyRequest, QuoteRequest, RateSegment, ReleaseRequest, ReserveRequest,
+                       TimeWindow, TransferRequest)
 from ..sense import MockSense
 from ..sim import MockNetwork
 from ..telemetry import MockTelemetry
@@ -17,8 +20,8 @@ from ..topology import Topology
 
 UTC = timezone.utc
 
-CFG = {"slot_seconds": 900, "horizon_seconds": 86400, "reserve_ttl_seconds": 60, "max_paths": 3,
-       "rate_step_gbps": 10}
+CFG = {"slot_seconds": 900, "horizon_seconds": 86400, "reserve_ttl_seconds": 60, "quote_ttl_seconds": 900,
+       "max_paths": 3, "rate_step_gbps": 10}
 
 
 def t(hh, mm=0, day=20):
@@ -93,6 +96,22 @@ def quote(graph, ctx, *transfers, mode="all_or_nothing", now=t(9)):
     return graph.invoke({"raw": raw, "now": now}, context=ctx)
 
 
+def quote_t1_t2(quote_id="q1"):
+    """The demos' quote request: T1 of slide 7 (50 TB) and T2 (1 TB), all or nothing."""
+    return QuoteRequest(quote_id=quote_id, bundle=[tr("T1"), tr("T2", nbytes=10**12)], mode="all_or_nothing")
+
+
+# the demos' reserve and commit after quote_t1_t2: T1 at 12:00 @ 100 Gbps, T2 at 09:00 @ 40 Gbps
+R1 = ReserveRequest(request_id="r1", quote_id="q1", offer_ids=["q1/T1/2", "q1/T2/1"])
+C1 = CommitRequest(request_id="c1", reserve_id="rsv-1")
+
+
+def modify_t1(request_id, end, gbps):
+    """A ModifyRequest giving R1's T1 offer (starts 12:00) the single segment [12:00, end) @ gbps."""
+    return ModifyRequest(request_id=request_id, reserve_id="rsv-1", offer_id="q1/T1/2",
+                         rate_profile=[RateSegment(start=t(12), end=end, gbps=gbps)])
+
+
 def reserve(ctx, *offer_ids, quote_id="q1", now=t(9), **over):
     """Run the reserve branch for these offers, with request_id "r1"; returns the final graph state."""
     raw = ReserveRequest(request_id="r1", quote_id=quote_id, offer_ids=list(offer_ids), **over).model_dump()
@@ -105,6 +124,19 @@ def commit(ctx, reserve_id="rsv-1", now=t(9), request_id="c1"):
     return build_commit_graph().invoke({"raw": raw, "now": now}, context=ctx)
 
 
+def release(ctx, reserve_id="rsv-1", offer_ids=None, now=t(9), request_id="x1"):
+    """Run the release branch (all offers still held unless offer_ids is given); returns the final graph state."""
+    raw = ReleaseRequest(request_id=request_id, reserve_id=reserve_id, offer_ids=offer_ids).model_dump()
+    return build_release_graph().invoke({"raw": raw, "now": now}, context=ctx)
+
+
+def modify(ctx, offer_id, start, end, gbps, reserve_id="rsv-1", now=t(9), request_id="m1"):
+    """Run the modify branch: give offer_id the single segment [start, end) @ gbps; returns the final graph state."""
+    raw = ModifyRequest(request_id=request_id, reserve_id=reserve_id, offer_id=offer_id,
+                        rate_profile=[RateSegment(start=start, end=end, gbps=gbps)]).model_dump()
+    return build_modify_graph().invoke({"raw": raw, "now": now}, context=ctx)
+
+
 def make_quoted_ctx(net):
     """An agent that has just quoted T1 (slide 7, 50 TB) and T2 (1 TB) together at 09:00:
 
@@ -113,5 +145,5 @@ def make_quoted_ctx(net):
         q1/T1/3  09:00 @  20 Gbps → 14:33:20      q1/T2/3  09:00 @  10 Gbps → 09:13:20
     """
     ctx = make_ctx(net)
-    quote(build_quote_graph(), ctx, tr("T1"), tr("T2", nbytes=10**12))
+    build_quote_graph().invoke({"raw": quote_t1_t2().model_dump(), "now": t(9)}, context=ctx)
     return ctx

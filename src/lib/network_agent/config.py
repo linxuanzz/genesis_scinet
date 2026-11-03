@@ -18,6 +18,7 @@ class NetAgentConfig(BaseModel):
     slot_seconds: PositiveInt         # ledger slot length; smaller is more precise but costs more bin-packing (slide 23)
     horizon_seconds: PositiveInt      # how far ahead the ledger looks
     reserve_ttl_seconds: PositiveInt  # an uncommitted reserve is released automatically after this (slide 19)
+    quote_ttl_seconds: PositiveInt    # quoted offers can be reserved for this long; also bounds how late a reserved start can be
     max_paths: PositiveInt            # max candidate paths per endpoint pair (fewest hops first)
     rate_step_gbps: PositiveFloat     # offer rates are rounded to this step (slide 7's 40 / 100 / 20 Gbps are all multiples of 10)
 

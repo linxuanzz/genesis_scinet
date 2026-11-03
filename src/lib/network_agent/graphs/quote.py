@@ -5,21 +5,23 @@
 
 A quote is read-only: it reserves no capacity and never calls SENSE. Its only write is refreshing
 stale ``observed`` values in the ledger, which are observations, not bookings. Every offer is also
-remembered in offer_book, so that a later reserve can find what it refers to.
+remembered in offer_book, so that a later reserve can find what it refers to. The offers can be
+reserved until valid_until (now + quote_ttl_seconds); after that reserve refuses them and the expiry
+sweep drops them from offer_book (step 5b).
 """
 
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import TypedDict
 
 from langgraph.graph import END, START, StateGraph
 from langgraph.runtime import Runtime
-from pydantic import ValidationError
 
 from ..context import AgentContext, QuotedOffer
 from ..placement import Placement, dedupe, search
 from ..schemas import ErrorResponse, Offer, QuoteRequest, QuoteResponse, RejectReason, TransferQuote
 from ..telemetry import refresh_stale
 from ..topology import Path
+from .common import parse_request
 
 
 class QuoteState(TypedDict, total=False):
@@ -38,13 +40,8 @@ class QuoteState(TypedDict, total=False):
 
 def validate_bundle(state: QuoteState) -> dict:
     """Check format and internal consistency only (the rules in schemas.py); whether the request can be met is left to later nodes."""
-    raw = state["raw"]
-    try:
-        return {"request": QuoteRequest.model_validate(raw)}
-    except ValidationError as e:
-        quote_id = raw.get("quote_id") if isinstance(raw, dict) else None
-        return {"response": ErrorResponse(request_id=str(quote_id or "unknown"), code="invalid_request",
-                                          detail="; ".join(err["msg"] for err in e.errors()))}
+    req = parse_request(QuoteRequest, state["raw"], id_field="quote_id")
+    return {"response": req} if isinstance(req, ErrorResponse) else {"request": req}
 
 
 def refresh_if_stale(state: QuoteState, runtime: Runtime[AgentContext]) -> dict:
@@ -109,19 +106,20 @@ def respond(state: QuoteState, runtime: Runtime[AgentContext]) -> dict:
     by id the placement behind it and the request it answers."""
     if "response" in state:                       # validation failed; an ErrorResponse is already set
         return {}
-    req = state["request"]
+    ctx, req = runtime.context, state["request"]
+    valid_until = state["now"] + timedelta(seconds=ctx.cfg.quote_ttl_seconds)
     results = []
     for tr in req.bundle:
         if tr.id in state["offers"]:
             offers = state["offers"][tr.id]
             for offer, p in zip(offers, state["placements"][tr.id]):
-                runtime.context.offer_book[offer.offer_id] = QuotedOffer(req.quote_id, tr, p)
+                ctx.offer_book[offer.offer_id] = QuotedOffer(req.quote_id, tr, p, valid_until)
             results.append(TransferQuote(transfer_id=tr.id, status="feasible", offers=offers))
         else:
             reason = state["rejections"][tr.id]
             status = "unreachable" if reason.cause == "no_path" else "infeasible"
             results.append(TransferQuote(transfer_id=tr.id, status=status, reason=reason))
-    return {"response": QuoteResponse(quote_id=req.quote_id, mode=req.mode, results=results)}
+    return {"response": QuoteResponse(quote_id=req.quote_id, mode=req.mode, results=results, valid_until=valid_until)}
 
 
 # ── edges ────────────────────────────────────────────────────────────────

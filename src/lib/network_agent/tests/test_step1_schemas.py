@@ -102,9 +102,11 @@ def test_admissible_depends_on_mode():
     ok = TransferQuote(transfer_id="T1", status="feasible", offers=[a2()])
     bad = TransferQuote(transfer_id="T2", status="unreachable",
                         reason=RejectReason(cause="no_path", detail="no route"))
-    assert not QuoteResponse(quote_id="q", mode="all_or_nothing", results=[ok, bad]).admissible
-    assert QuoteResponse(quote_id="q", mode="best_subset", results=[ok, bad]).admissible
-    assert not QuoteResponse(quote_id="q", mode="best_subset", results=[bad]).admissible
+    def resp(mode, results):
+        return QuoteResponse(quote_id="q", mode=mode, results=results, valid_until=t(9, 15))
+    assert not resp("all_or_nothing", [ok, bad]).admissible
+    assert resp("best_subset", [ok, bad]).admissible
+    assert not resp("best_subset", [bad]).admissible
 
 
 def test_slide7_arithmetic():

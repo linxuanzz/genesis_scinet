@@ -18,8 +18,10 @@ cancelled and every booking is rolled back.
 Each offer gets its own circuit, i.e. one ServiceIntent and one SENSE instance (see circuit.py). The
 debit happens here, not at commit, so that the very next quote already sees it; commit only confirms.
 
-Known gaps, left to step 5b: a reservation past its expires_at is not reclaimed automatically (its
-bookings and SENSE instances stay held until then); a repeated request_id is not recognized.
+An offer can only be reserved within its quote's validity. A reservation past its expires_at is
+reclaimed by the expiry sweep (reclaim.py), as are instances a rollback failed to cancel: those keep
+their bookings until then, since the network still carries them. A resent request_id is answered from
+graph A's cache (protocol.py); this branch alone does not recognize it.
 """
 
 from datetime import datetime, timedelta
@@ -27,16 +29,15 @@ from typing import TypedDict
 
 from langgraph.graph import END, START, StateGraph
 from langgraph.runtime import Runtime
-from pydantic import ValidationError
 
 from ..circuit import compile_intent, place_on_circuit
 from ..context import AgentContext, QuotedOffer, Reservation, ReservedOffer
 from ..ledger import InsufficientCapacity
 from ..placement import Placement
 from ..schemas import ErrorResponse, ReserveAck, ReserveRequest, ServiceIntent, ServiceState
-from ..sense import SenseError
+from ..sense import SenseError, cancel_instances
 from ..telemetry import refresh_stale
-from .common import on_error
+from .common import on_error, parse_request
 
 
 class ReserveState(TypedDict, total=False):
@@ -58,21 +59,22 @@ class ReserveState(TypedDict, total=False):
 
 def validate_reserve(state: ReserveState, runtime: Runtime[AgentContext]) -> dict:
     """Check the request against what we quoted and what is already reserved. Nothing is written yet."""
-    ctx, raw = runtime.context, state["raw"]
-    try:
-        req = ReserveRequest.model_validate(raw)
-    except ValidationError as e:
-        request_id = raw.get("request_id") if isinstance(raw, dict) else None
-        return {"error": ErrorResponse(request_id=str(request_id or "unknown"), code="invalid_request",
-                                       detail="; ".join(err["msg"] for err in e.errors()))}
+    ctx, req = runtime.context, parse_request(ReserveRequest, state["raw"])
+    if isinstance(req, ErrorResponse):
+        return {"error": req}
 
     def fail(code: str, detail: str) -> dict:
         return {"request": req, "error": ErrorResponse(request_id=req.request_id, code=code, detail=detail)}
 
     unknown = [o for o in req.offer_ids if o not in ctx.offer_book]
+    if unknown and req.quote_id in ctx.expired_quotes:
+        return fail("expired", f"quote {req.quote_id} has expired; its offers were dropped")
     if unknown:
         return fail("not_found", f"unknown offers: {unknown}")
     quoted = {o: ctx.offer_book[o] for o in req.offer_ids}
+    stale = [o for o, q in quoted.items() if state["now"] >= q.expires_at]
+    if stale:
+        return fail("expired", f"offers whose quote expired at {quoted[stale[0]].expires_at:%H:%M:%S}: {stale}")
     other_quote = [o for o, q in quoted.items() if q.quote_id != req.quote_id]
     if other_quote:
         return fail("invalid_request", f"offers not from quote {req.quote_id}: {other_quote}")
@@ -80,7 +82,7 @@ def validate_reserve(state: ReserveState, runtime: Runtime[AgentContext]) -> dic
     twice = sorted({tid for tid in transfers if transfers.count(tid) > 1})
     if twice:
         return fail("invalid_request", f"more than one offer for transfers {twice}")
-    taken = sorted(item.offer_id for r in ctx.reservations.values() for item in r.items if item.offer_id in quoted)
+    taken = sorted(item.offer_id for r in ctx.reservations.values() for item in r.held if item.offer_id in quoted)
     if taken:
         return fail("conflict", f"offers already reserved: {taken}")
     over = [o for o, q in quoted.items() if q.placement.end <= state["now"]]
@@ -139,19 +141,20 @@ def sense_propagate(state: ReserveState, runtime: Runtime[AgentContext]) -> dict
 
 
 def ledger_rollback(state: ReserveState, runtime: Runtime[AgentContext]) -> dict:
-    """Undo the whole reserve: cancel the SENSE instances already created, then return every booking."""
-    ctx, now = runtime.context, state["now"]
-    stuck = []
-    for s in state["instances"].values():
-        try:
-            ctx.sense.cancel(s.instance_id, now)
-        except SenseError as e:
-            stuck.append(f"{s.instance_id} ({e})")
-    for booking_id in state["bookings"].values():
-        ctx.ledger.rollback(booking_id)
-    if stuck:                                     # still held in SENSE; needs reconciliation (step 5b)
+    """Undo the whole reserve: cancel the SENSE instances already created, then return the bookings. An
+    instance that fails to cancel becomes an orphan: it keeps its booking until the expiry sweep cancels it."""
+    ctx, instances = runtime.context, state["instances"]
+    _, failed = cancel_instances(ctx.sense, [s.instance_id for s in instances.values()], state["now"])
+    for o, booking_id in state["bookings"].items():
+        if o in instances and instances[o].instance_id in failed:
+            ctx.orphans[instances[o].instance_id] = booking_id
+        else:
+            ctx.ledger.rollback(booking_id)
+    if failed:
+        stuck = [f"{instance_id} ({e})" for instance_id, e in failed.items()]
         error = state["error"]
-        return {"error": error.model_copy(update={"detail": f"{error.detail}; cancel also failed: {stuck}"})}
+        return {"error": error.model_copy(update={"detail": f"{error.detail}; cancel also failed: {stuck}, "
+                                                            "kept until the expiry sweep cancels it"})}
     return {}
 
 
@@ -159,8 +162,9 @@ def record_reserve(state: ReserveState, runtime: Runtime[AgentContext]) -> dict:
     """Write the reservation into the context, with its expiry."""
     ctx, req, rid = runtime.context, state["request"], state["reserve_id"]
     ttl = req.ttl_seconds or ctx.cfg.reserve_ttl_seconds
-    items = [ReservedOffer(offer_id=o, placement=state["chosen"][o], booking_id=state["bookings"][o],
-                           intent=state["intents"][o], instance_id=s.instance_id, vlan=s.vlan)
+    items = [ReservedOffer(offer_id=o, request=state["quoted"][o].request, placement=state["chosen"][o],
+                           booking_id=state["bookings"][o], intent=state["intents"][o],
+                           instance_id=s.instance_id, vlan=s.vlan)
              for o, s in state["instances"].items()]
     ctx.reservations[rid] = Reservation(reserve_id=rid, quote_id=req.quote_id, items=items,
                                         expires_at=state["now"] + timedelta(seconds=ttl))

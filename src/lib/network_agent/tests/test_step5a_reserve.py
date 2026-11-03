@@ -128,15 +128,18 @@ def test_sense_refusal_rolls_back_the_whole_group(net, ctx):
 
 
 def test_failed_cancel_is_reported(net, ctx):
-    """If cancelling during rollback also fails, the ledger is still rolled back but the error says what is
-    left held in SENSE (cleaning it up is step 5b)."""
+    """If cancelling during rollback also fails, the error says what is left held in SENSE. That instance
+    becomes an orphan and keeps its booking (step 5b: the sweep cancels it); the other booking is returned."""
     net.add_background(L2, t(12), t(13), 30)
     ctx.sense.fail_next("cancel")
     resp = reserve(ctx, "q1/T2/1", "q1/T1/2", now=t(9, 1))["response"]
     assert resp.code == "sense_failure" and "cancel also failed" in resp.detail and "si-1" in resp.detail
     assert ctx.sense.state("si-1").state == "reserved"
     assert ctx.reservations == {}
-    assert all(ctx.ledger.own(link, i) == 0 for link in MAIN for i in range(ctx.ledger.n_slots))
+    assert ctx.orphans == {"si-1": "rsv-1/q1/T2/1"}
+    assert ctx.ledger.booking("rsv-1/q1/T2/1").state == "pending"
+    noon = ctx.ledger.slots_covering(t(12), t(12, 1))[0]
+    assert [ctx.ledger.own(link, noon) for link in MAIN] == [0, 0, 0]          # q1/T1/2 was never propagated
 
 
 # ── ledger: debiting a group ──────────────────────────────────────────────

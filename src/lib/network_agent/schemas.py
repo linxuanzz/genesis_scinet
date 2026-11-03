@@ -27,6 +27,14 @@ def _unique(ids: list[str], what: str) -> None:
         raise ValueError(f"duplicate {what}: {dup}")
 
 
+def _check_profile(profile: list["RateSegment"]) -> None:
+    if not profile:
+        raise ValueError("rate_profile must not be empty")
+    for a, b in zip(profile, profile[1:]):
+        if b.start < a.end:
+            raise ValueError("rate_profile segments must be sorted and non-overlapping")
+
+
 # ── quote ────────────────────────────────────────────────────────────────
 
 class TimeWindow(Msg):
@@ -106,11 +114,7 @@ class Offer(Msg):
 
     @model_validator(mode="after")
     def _consistent(self):
-        if not self.rate_profile:
-            raise ValueError("rate_profile must not be empty")
-        for a, b in zip(self.rate_profile, self.rate_profile[1:]):
-            if b.start < a.end:
-                raise ValueError("rate_profile segments must be sorted and non-overlapping")
+        _check_profile(self.rate_profile)
         if not self.start <= self.predicted_finish_p50 <= self.predicted_finish_p95:
             raise ValueError("need start <= predicted_finish_p50 <= predicted_finish_p95")
         return self
@@ -147,6 +151,7 @@ class QuoteResponse(Msg):
     quote_id: str
     mode: Literal["all_or_nothing", "best_subset"]
     results: list[TransferQuote]
+    valid_until: AwareDatetime                        # the offers can be reserved until then (step 5b)
 
     @property
     def admissible(self) -> bool:
@@ -215,6 +220,54 @@ class Commitment(Msg):
 class CommitAck(Msg):
     reserve_id: str
     commitments: list[Commitment]
+
+
+# ── release (step 5b) ─────────────────────────────────────────────────────
+
+class ReleaseRequest(Msg):
+    """Give back a reservation, committed or not: all of it, or only some of its offers (e.g. a transfer
+    that finished early while the rest of the group keeps its circuits)."""
+
+    request_id: str
+    reserve_id: str
+    offer_ids: list[str] | None = None                # None → every offer still held
+
+    @model_validator(mode="after")
+    def _offers_ok(self):
+        if self.offer_ids is not None:
+            if not self.offer_ids:
+                raise ValueError("offer_ids must not be empty; leave it out to release everything")
+            _unique(self.offer_ids, "offer id")
+        return self
+
+
+class ReleaseAck(Msg):
+    reserve_id: str
+    offer_ids: list[str]                              # released by this request
+
+
+# ── modify (step 5b) ──────────────────────────────────────────────────────
+
+class ModifyRequest(Msg):
+    """Change the rate and/or time range of one reserved or committed offer, on the same path and circuit.
+    Moving to another path is not a modify: reserve the new one, then release the old (make-before-break)."""
+
+    request_id: str
+    reserve_id: str
+    offer_id: str
+    rate_profile: list[RateSegment]                   # the offer's new profile, replacing the old one
+
+    @model_validator(mode="after")
+    def _profile_ok(self):
+        _check_profile(self.rate_profile)
+        return self
+
+
+class ModifyAck(Msg):
+    reserve_id: str
+    offer_id: str
+    rate_profile: list[RateSegment]                   # now in effect
+    commitment: Commitment | None = None              # the updated commitment, if the offer was committed
 
 
 class ErrorResponse(Msg):

@@ -7,9 +7,13 @@ every invoke (by design, the ledger stays out of state).
 
 The three books form a chain, each entry pointing back to the previous one by id:
 
-    offer_book     offer_id      → QuotedOffer   written by quote's respond
+    offer_book     offer_id      → QuotedOffer   written by quote's respond, dropped once the quote expires (step 5b)
     reservations   reserve_id    → Reservation   written by reserve (step 5a)
-    commitments    commitment_id → Commitment    written by commit (step 5a)
+    commitments    commitment_id → Commitment    written by commit (step 5a), dropped by release (step 5b)
+
+Two smaller books serve the expiry sweep (reclaim.py): ``orphans``, SENSE instances that a failed reserve
+could not cancel, and ``expired_quotes``, so that a reserve against a dropped quote is told it expired.
+``answered`` caches successful replies so that graph A can answer a resent request (step 5b).
 """
 
 from collections import defaultdict
@@ -23,7 +27,7 @@ from .config import NetAgentConfig
 from .estimate import RateModel
 from .ledger import CapacityLedger
 from .placement import Placement
-from .schemas import Commitment, ServiceIntent, TransferRequest
+from .schemas import Commitment, Msg, ServiceIntent, TransferRequest
 from .sense import SenseAdapter
 from .telemetry import TelemetrySource
 from .topology import Topology
@@ -37,6 +41,7 @@ class QuotedOffer:
     quote_id: str
     request: TransferRequest
     placement: Placement
+    expires_at: datetime                              # the quote's valid_until; reserve refuses the offer after this
 
 
 @dataclass(frozen=True)
@@ -44,6 +49,7 @@ class ReservedOffer:
     """One offer inside a reservation: the ledger booking and the SENSE instance that hold it."""
 
     offer_id: str
+    request: TransferRequest                          # the transfer it serves (offer_book may drop the quote before commit)
     placement: Placement                              # what was actually booked (may differ from the quote once
                                                       # the alternate-path hook exists); gives the commitment's rate
     booking_id: str                                   # ledger booking; pending until commit
@@ -60,7 +66,33 @@ class Reservation:
     quote_id: str
     items: list[ReservedOffer]
     expires_at: datetime                              # an uncommitted reservation is void after this
-    state: Literal["reserved", "committed"] = "reserved"
+    state: Literal["reserved", "committed", "released", "expired"] = "reserved"   # released / expired: every item
+                                                      # given back, by a release or by the expiry sweep
+    commitment_ids: dict[str, str] = field(default_factory=dict)       # offer_id → commitment_id, written by commit
+    released: set[str] = field(default_factory=set)                    # offer_ids given back (step 5b)
+
+    @property
+    def held(self) -> list[ReservedOffer]:
+        """The items not released yet, in reserve order."""
+        return [i for i in self.items if i.offer_id not in self.released]
+
+    def is_expired(self, now: datetime) -> bool:
+        """Void for commit and modify: swept already, or uncommitted and past expires_at (not swept yet)."""
+        return self.state == "expired" or (self.state == "reserved" and now >= self.expires_at)
+
+    def mark_released(self, offer_ids: list[str], done: Literal["released", "expired"] = "released") -> None:
+        """Record these items as given back; once none is held, the reservation's state becomes ``done``."""
+        self.released.update(offer_ids)
+        if not self.held:
+            self.state = done
+
+
+@dataclass(frozen=True)
+class Answered:
+    """A request that succeeded and the reply it got, keyed in AgentContext.answered by (verb, request id)."""
+
+    request: Msg
+    response: Msg
 
 
 @dataclass
@@ -74,6 +106,9 @@ class AgentContext:
     offer_book: dict[str, QuotedOffer] = field(default_factory=dict)
     reservations: dict[str, Reservation] = field(default_factory=dict)
     commitments: dict[str, Commitment] = field(default_factory=dict)
+    orphans: dict[str, str] = field(default_factory=dict)            # instance_id → its booking, kept until cancelled
+    expired_quotes: set[str] = field(default_factory=set)            # quote_ids whose offers were dropped
+    answered: dict[tuple[str, str], Answered] = field(default_factory=dict)   # (verb, request id) → Answered
     _seq: dict[str, Iterator[int]] = field(init=False, repr=False, default_factory=lambda: defaultdict(lambda: count(1)))
 
     def new_id(self, prefix: str) -> str:

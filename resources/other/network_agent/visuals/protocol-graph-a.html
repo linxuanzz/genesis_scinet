@@ -4,57 +4,67 @@
     #protocol-graph-a .graph-header { display: flex; align-items: start; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-bottom: 20px; padding-right: 80px; }
     #protocol-graph-a h2, #protocol-graph-a h3 { margin: 0; }
     #protocol-graph-a .graph-controls { margin-bottom: 20px; }
-    #protocol-graph-a .entry { text-align: center; display: grid; justify-items: center; }
+    #protocol-graph-a .entry, #protocol-graph-a .exit { text-align: center; display: grid; justify-items: center; }
     #protocol-graph-a .terminal { padding: 5px 22px; border: 1px solid var(--border); border-radius: 24px; color: var(--foreground); }
     #protocol-graph-a .step { position: relative; padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px; text-align: center; background: color-mix(in srgb, var(--viz-series-1) 7%, transparent); }
     #protocol-graph-a .step code { display: block; color: var(--foreground); background: transparent; overflow-wrap: anywhere; }
     #protocol-graph-a .step .step-label { display: block; margin-top: 3px; }
     #protocol-graph-a .step .condition { display: block; margin-top: 4px; color: var(--muted-foreground); }
     #protocol-graph-a .step .hook { display: block; margin-top: 4px; color: var(--muted-foreground); font-style: italic; }
-    #protocol-graph-a .entry .step { min-width: 200px; }
+    #protocol-graph-a .entry .step, #protocol-graph-a .exit .step { width: min(420px, 100%); box-sizing: border-box; }
+    #protocol-graph-a .entry .shared, #protocol-graph-a .exit .shared { background: color-mix(in srgb, var(--viz-series-5) 9%, transparent); }
     #protocol-graph-a .arrow { text-align: center; color: var(--muted-foreground); height: 25px; display: grid; place-items: center; }
     #protocol-graph-a .split { display: block; width: 100%; height: 34px; color: var(--muted-foreground); }
-    #protocol-graph-a .lanes { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 24px; align-items: start; }
-    #protocol-graph-a .lane { min-width: 0; }
-    #protocol-graph-a .lane-heading { text-align: center; margin-bottom: 14px; display: grid; gap: 4px; }
+    #protocol-graph-a .lanes { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 12px; align-items: stretch; }
+    #protocol-graph-a .lane { min-width: 0; display: flex; flex-direction: column; }
+    #protocol-graph-a .lane-heading { text-align: center; margin-bottom: 14px; display: grid; gap: 4px; align-content: start; min-height: 76px; }
     #protocol-graph-a .quote .step { background: color-mix(in srgb, var(--viz-series-2) 8%, transparent); }
+    #protocol-graph-a .planned .step:not(.optional) { background: color-mix(in srgb, var(--viz-series-6) 8%, transparent); }
     #protocol-graph-a .optional { border-style: dashed; background: transparent !important; }
-    #protocol-graph-a .outcomes { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px; }
+    #protocol-graph-a .outcomes { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 8px; }
     #protocol-graph-a .outcome { min-width: 0; text-align: center; display: flex; flex-direction: column; }
-    #protocol-graph-a .outcome .step { flex: 1; }
+    #protocol-graph-a .outcome .step { flex: 1; padding: 8px 5px; }
+    #protocol-graph-a .outcome code { font-size: .74em; white-space: nowrap; overflow-wrap: normal; }
     #protocol-graph-a .outcome-label { display: block; margin-bottom: 7px; }
-    #protocol-graph-a .success .step { background: color-mix(in srgb, var(--viz-series-3) 10%, transparent); }
-    #protocol-graph-a .failure .step { background: color-mix(in srgb, var(--viz-series-4) 8%, transparent); }
-    #protocol-graph-a .lane .terminal { width: max-content; margin: 0 auto; }
+    #protocol-graph-a .success .step { background: color-mix(in srgb, var(--viz-series-3) 10%, transparent) !important; }
+    #protocol-graph-a .failure .step:not(.optional) { background: color-mix(in srgb, var(--viz-series-4) 8%, transparent) !important; }
+    #protocol-graph-a .drop { flex: 1; min-height: 25px; background: linear-gradient(var(--muted-foreground), var(--muted-foreground)) center / 1px 100% no-repeat; }
     #protocol-graph-a .merge { height: 30px; display: block; width: 100%; color: var(--muted-foreground); }
     #protocol-graph-a .notes { margin-top: 22px; display: grid; gap: 6px; color: var(--muted-foreground); }
     #protocol-graph-a .legend { margin-top: 14px; display: flex; gap: 8px 20px; flex-wrap: wrap; color: var(--muted-foreground); }
     #protocol-graph-a .legend span { display: inline-flex; align-items: center; gap: 7px; }
     #protocol-graph-a .legend-mark { width: 20px; height: 13px; border: 1px solid var(--border); border-radius: 3px; background: color-mix(in srgb, var(--viz-series-1) 7%, transparent); }
+    #protocol-graph-a .legend-mark.shared { background: color-mix(in srgb, var(--viz-series-5) 9%, transparent); }
+    #protocol-graph-a .legend-mark.planned { background: color-mix(in srgb, var(--viz-series-6) 8%, transparent); }
     #protocol-graph-a .legend-mark.optional { border-style: dashed; background: transparent; }
     #protocol-graph-a [hidden] { display: none !important; }
+    #protocol-graph-a .single-only { display: none; }
+    #protocol-graph-a[data-view="single"] .single-only { display: grid; }
     #protocol-graph-a[data-view="single"] .lanes { grid-template-columns: minmax(0, 1fr); max-width: 460px; margin: 0 auto; }
     #protocol-graph-a[data-view="single"] .split.fan { display: none; }
     #protocol-graph-a[data-view="single"] .entry { margin-bottom: 25px; }
-    @media (max-width: 900px) {
+    @media (max-width: 1000px) {
       #protocol-graph-a .graph-header { padding-right: 0; }
-      #protocol-graph-a .lanes { grid-template-columns: minmax(0, 1fr); gap: 32px; }
+      #protocol-graph-a .lanes { grid-template-columns: minmax(0, 1fr); gap: 32px; max-width: 460px; margin: 0 auto; }
       #protocol-graph-a .split.fan { display: none; }
+      #protocol-graph-a .single-only { display: grid; }
       #protocol-graph-a .entry { margin-bottom: 24px; }
     }
   </style>
 
   <div class="graph-header">
     <h2>Figure A · Protocol Graph</h2>
-    <span class="text-small">slides 12 / 19 / 23 · revised 2026-10-30 for step 5a</span>
+    <span class="text-small">slides 12 / 19 / 23 · revised 2026-11-01 for step 5b (design)</span>
   </div>
   <div class="viz-controls graph-controls">
     <label class="form-label" for="protocol-verb">Select a command
       <select class="form-select" id="protocol-verb">
-        <option value="all">All three commands</option>
+        <option value="all">All five commands</option>
         <option value="quote">quote · Request offers</option>
         <option value="reserve">reserve · Reserve tentatively (slides: hold)</option>
         <option value="commit">commit · Confirm reservation</option>
+        <option value="release">release · Give back a reserve or commitment</option>
+        <option value="modify">modify · Change rate or time of one item</option>
       </select>
     </label>
   </div>
@@ -62,13 +72,17 @@
   <div class="entry">
     <div class="terminal">START</div>
     <div class="arrow" aria-hidden="true">↓</div>
-    <div class="step"><code>route_verb</code><span class="step-label">Route by command</span></div>
+    <div class="step shared"><code>dedupe_request</code><span class="step-label">Same (verb, request_id) answered before?</span><span class="condition text-small">same body → return the cached reply → END · different body → invalid_request</span></div>
+    <div class="arrow" aria-hidden="true">↓</div>
+    <div class="step shared"><code>sweep_expired</code><span class="step-label">Reclaim reserves past their TTL (state → expired), retry the cancel of orphan instances, drop offers of expired quotes</span><span class="hook text-small">hook: a timer may call the same function</span></div>
+    <div class="arrow" aria-hidden="true">↓</div>
+    <div class="step"><code>route_verb</code><span class="step-label">Route by command</span><span class="condition text-small">unknown verb → invalid_request</span></div>
   </div>
   <svg class="split fan" viewBox="0 0 100 34" preserveAspectRatio="none" aria-hidden="true">
-    <path d="M50 0V34 M16.67 34V12H83.33V34" fill="none" stroke="currentColor" stroke-width="1" vector-effect="non-scaling-stroke"/>
+    <path d="M50 0V34 M10 34V12H90V34 M30 12V34 M70 12V34" fill="none" stroke="currentColor" stroke-width="1" vector-effect="non-scaling-stroke"/>
   </svg>
 
-  <div class="lanes" role="group" aria-label="quote, reserve and commit branches; follow arrows from top to bottom">
+  <div class="lanes" role="group" aria-label="quote, reserve, commit, release and modify branches; follow arrows from top to bottom">
     <section class="lane quote" id="protocol-quote">
       <div class="lane-heading"><h3>quote</h3><span class="text-small">Read-only · No SENSE call · step 4</span></div>
       <div class="step"><code>validate_bundle</code><span class="step-label">Validate the request bundle</span><span class="condition text-small">invalid → respond(error)</span></div>
@@ -79,68 +93,111 @@
       <div class="arrow" aria-hidden="true">↓</div>
       <div class="step"><code>estimate_finish</code><span class="step-label">Estimate p50 / p95 finish times</span></div>
       <div class="arrow" aria-hidden="true">↓</div>
-      <div class="step"><code>respond</code><span class="step-label">Return offers; remember them in offer_book</span></div>
-      <div class="arrow" aria-hidden="true">↓</div>
-      <div class="terminal">END</div>
+      <div class="step"><code>respond</code><span class="step-label">Return offers; remember them in offer_book</span><span class="condition text-small">offers valid until valid_until = now + quote_ttl_seconds</span></div>
+      <div class="drop" aria-hidden="true"></div>
     </section>
 
     <section class="lane" id="protocol-reserve">
       <div class="lane-heading"><h3>reserve</h3><span class="text-small">Slides: hold · Debits the ledger · step 5a</span></div>
-      <div class="step"><code>validate_reserve</code><span class="step-label">Look up the chosen offers</span><span class="condition text-small">unknown offer / bad request → respond(error)</span></div>
+      <div class="step"><code>validate_reserve</code><span class="step-label">Look up the chosen offers</span><span class="condition text-small">unknown → not_found · quote expired → expired · bad request → invalid_request</span></div>
       <div class="arrow" aria-hidden="true">↓</div>
-      <div class="step"><code>recheck_capacity</code><span class="step-label">Refresh stale observations, recheck each offer's path</span><span class="condition text-small">capacity gone → respond(conflict)</span></div>
+      <div class="step"><code>recheck_capacity</code><span class="step-label">Refresh stale observations on the offers' paths</span></div>
       <div class="arrow" aria-hidden="true">↓</div>
-      <div class="step"><code>place_on_circuit</code><span class="step-label">Choose the circuit: one new circuit per offer</span><span class="hook text-small">hooks: warm-circuit reuse, alternate path, priority / preemption</span></div>
+      <div class="step"><code>place_on_circuit</code><span class="step-label">One new circuit per offer</span><span class="hook text-small">hooks: warm-circuit reuse, alternate path, priority / preemption</span></div>
       <div class="arrow" aria-hidden="true">↓</div>
-      <div class="step"><code>compile_intent</code><span class="step-label">Compile one ServiceIntent per offer</span></div>
+      <div class="step"><code>compile_intent</code><span class="step-label">One ServiceIntent per offer</span></div>
       <div class="arrow" aria-hidden="true">↓</div>
-      <div class="step"><code>ledger_pending</code><span class="step-label">Debit the whole bundle in the own layer</span><span class="condition text-small">Later quotes see it at once</span></div>
+      <div class="step"><code>ledger_pending</code><span class="step-label">Debit the whole bundle in the own layer</span><span class="condition text-small">no room → respond(conflict)</span></div>
       <div class="arrow" aria-hidden="true">↓</div>
       <div class="step"><code>sense_propagate</code><span class="step-label">SENSE propagate, one instance per offer</span><span class="condition text-small">All-or-nothing for the bundle</span></div>
       <svg class="split" viewBox="0 0 100 34" preserveAspectRatio="none" aria-hidden="true">
         <path d="M50 0V12 M25 34V12H75V34" fill="none" stroke="currentColor" stroke-width="1" vector-effect="non-scaling-stroke"/>
       </svg>
       <div class="outcomes">
-        <div class="outcome success"><span class="outcome-label">ok · Success</span><div class="step"><code>record_reserve</code><span class="step-label">Store the reserve with its TTL</span></div></div>
-        <div class="outcome failure"><span class="outcome-label">fail · Failure</span><div class="step"><code>ledger_rollback</code><span class="step-label">Cancel propagated instances, roll back the bundle</span></div></div>
+        <div class="outcome success"><span class="outcome-label">ok</span><div class="step"><code>record_reserve</code><span class="step-label">Store the reserve with its TTL</span></div></div>
+        <div class="outcome failure"><span class="outcome-label">fail</span><div class="step"><code>ledger_rollback</code><span class="step-label">Cancel created instances, roll back the bundle</span><span class="condition text-small">a failed cancel → orphan, keeps its booking until the sweep cancels it</span></div></div>
       </div>
       <svg class="merge" viewBox="0 0 100 30" preserveAspectRatio="none" aria-hidden="true">
         <path d="M25 0V12H75V0 M50 12V30" fill="none" stroke="currentColor" stroke-width="1" vector-effect="non-scaling-stroke"/>
       </svg>
       <div class="step"><code>respond</code><span class="step-label">Return ReserveAck or error</span></div>
-      <div class="arrow" aria-hidden="true">↓</div>
-      <div class="terminal">END</div>
+      <div class="drop" aria-hidden="true"></div>
     </section>
 
     <section class="lane" id="protocol-commit">
       <div class="lane-heading"><h3>commit</h3><span class="text-small">Confirms a reserve · step 5a</span></div>
-      <div class="step"><code>validate_commit</code><span class="step-label">Look up the reserve</span><span class="condition text-small">unknown → not_found · past TTL → expired</span></div>
+      <div class="step"><code>validate_commit</code><span class="step-label">Look up the reserve</span><span class="condition text-small">unknown → not_found · past TTL → expired · released → conflict</span></div>
       <div class="arrow" aria-hidden="true">↓</div>
-      <div class="step"><code>sense_commit</code><span class="step-label">SENSE commit for each instance</span></div>
+      <div class="step"><code>sense_commit</code><span class="step-label">SENSE commit for each instance not yet committed</span></div>
       <svg class="split" viewBox="0 0 100 34" preserveAspectRatio="none" aria-hidden="true">
         <path d="M50 0V12 M25 34V12H75V34" fill="none" stroke="currentColor" stroke-width="1" vector-effect="non-scaling-stroke"/>
       </svg>
       <div class="outcomes">
-        <div class="outcome success"><span class="outcome-label">ok · Success</span><div class="step"><code>ledger_confirm</code><span class="step-label">Confirm bookings, build Commitments with EndpointBinding</span></div></div>
-        <div class="outcome failure"><span class="outcome-label">fail · Failure</span><div class="step optional"><span class="step-label">No ledger change: the reserve stays, commit can be retried</span></div></div>
+        <div class="outcome success"><span class="outcome-label">ok</span><div class="step"><code>ledger_confirm</code><span class="step-label">Confirm bookings, build Commitments with EndpointBinding</span></div></div>
+        <div class="outcome failure"><span class="outcome-label">fail</span><div class="step optional"><span class="step-label">No ledger change; commit can be retried</span></div></div>
       </div>
       <svg class="merge" viewBox="0 0 100 30" preserveAspectRatio="none" aria-hidden="true">
         <path d="M25 0V12H75V0 M50 12V30" fill="none" stroke="currentColor" stroke-width="1" vector-effect="non-scaling-stroke"/>
       </svg>
       <div class="step"><code>respond</code><span class="step-label">Return CommitAck or error</span></div>
+      <div class="drop" aria-hidden="true"></div>
+    </section>
+
+    <section class="lane" id="protocol-release">
+      <div class="lane-heading"><h3>release</h3><span class="text-small">Reserved or committed · step 5b</span></div>
+      <div class="step"><code>validate_release</code><span class="step-label">Look up the reserve and the items to release (all if none given)</span><span class="condition text-small">unknown → not_found · already released → conflict</span></div>
       <div class="arrow" aria-hidden="true">↓</div>
-      <div class="terminal">END</div>
+      <div class="step"><code>sense_cancel</code><span class="step-label">SENSE cancel for each item</span><span class="condition text-small">a failed cancel keeps its booking (still held in the network) → sense_failure, may retry</span></div>
+      <div class="arrow" aria-hidden="true">↓</div>
+      <div class="step"><code>ledger_release</code><span class="step-label">Return the bookings of cancelled items</span><span class="condition text-small">pending → rollback · confirmed → release</span></div>
+      <div class="arrow" aria-hidden="true">↓</div>
+      <div class="step"><code>respond</code><span class="step-label">Return ReleaseAck or error</span></div>
+      <div class="drop" aria-hidden="true"></div>
+    </section>
+
+    <section class="lane" id="protocol-modify">
+      <div class="lane-heading"><h3>modify</h3><span class="text-small">One item, same path and circuit · step 5b</span></div>
+      <div class="step"><code>validate_modify</code><span class="step-label">Look up the item; check the new rate profile</span><span class="condition text-small">unknown → not_found · past TTL → expired · released → conflict · one segment; a started item keeps its start</span><span class="hook text-small">path change = reserve new + release old (make-before-break)</span></div>
+      <div class="arrow" aria-hidden="true">↓</div>
+      <div class="step"><code>recheck_capacity</code><span class="step-label">Refresh stale observations on the new time range</span></div>
+      <div class="arrow" aria-hidden="true">↓</div>
+      <div class="step"><code>ledger_replace</code><span class="step-label">Swap the old booking for the new one atomically; the old one counts as free</span><span class="condition text-small">no room → respond(conflict)</span></div>
+      <div class="arrow" aria-hidden="true">↓</div>
+      <div class="step"><code>sense_modify</code><span class="step-label">SENSE modify the instance</span></div>
+      <svg class="split" viewBox="0 0 100 34" preserveAspectRatio="none" aria-hidden="true">
+        <path d="M50 0V12 M25 34V12H75V34" fill="none" stroke="currentColor" stroke-width="1" vector-effect="non-scaling-stroke"/>
+      </svg>
+      <div class="outcomes">
+        <div class="outcome success"><span class="outcome-label">ok</span><div class="step"><code>record_modify</code><span class="step-label">Update the item, and its Commitment if committed</span></div></div>
+        <div class="outcome failure"><span class="outcome-label">fail</span><div class="step"><code>ledger_restore</code><span class="step-label">Put the old profile back</span></div></div>
+      </div>
+      <svg class="merge" viewBox="0 0 100 30" preserveAspectRatio="none" aria-hidden="true">
+        <path d="M25 0V12H75V0 M50 12V30" fill="none" stroke="currentColor" stroke-width="1" vector-effect="non-scaling-stroke"/>
+      </svg>
+      <div class="step"><code>respond</code><span class="step-label">Return ModifyAck or error</span></div>
+      <div class="drop" aria-hidden="true"></div>
     </section>
   </div>
 
+  <svg class="split fan" viewBox="0 0 100 34" preserveAspectRatio="none" aria-hidden="true">
+    <path d="M10 0V12H90V0 M30 0V12 M50 0V34 M70 0V12" fill="none" stroke="currentColor" stroke-width="1" vector-effect="non-scaling-stroke"/>
+  </svg>
+  <div class="exit">
+    <div class="arrow single-only" aria-hidden="true">↓</div>
+    <div class="step shared"><code>remember_response</code><span class="step-label">Cache successful replies by (verb, request_id); quote uses quote_id</span><span class="condition text-small">errors are not cached, so a failed request can be retried with the same id</span></div>
+    <div class="arrow" aria-hidden="true">↓</div>
+    <div class="terminal">END</div>
+  </div>
+
   <div class="notes text-small">
-    <span>Revised from the first draft: circuit choice and intent compilation moved from commit to reserve, because SENSE propagate already needs the full intent; the capacity recheck moved to reserve, before the ledger debit; a failed commit no longer rolls back the ledger.</span>
-    <span>Step 5b (not designed yet): modify / release, automatic release when a reserve's TTL expires, idempotent retries.</span>
+    <span>Step 5a, revised from the first draft: circuit choice and intent compilation moved from commit to reserve, because SENSE propagate already needs the full intent; the capacity recheck moved to reserve, before the ledger debit; a failed commit no longer rolls back the ledger.</span>
+    <span>Step 5b adds the shared entry and exit (dedupe_request, sweep_expired, remember_response) and the release and modify branches. TTL expiry is handled lazily: every message first sweeps what has expired. The sweep gives back expired reserves with the same functions as the release branch. Implemented 2026-11-01.</span>
   </div>
   <div class="legend text-small">
     <span><i class="legend-mark" aria-hidden="true"></i>Execution node</span>
+    <span><i class="legend-mark shared" aria-hidden="true"></i>Shared by every command (5b)</span>
     <span><i class="legend-mark optional" aria-hidden="true"></i>No node on this branch</span>
-    <span><i>italic</i>&nbsp;Extension hook, not implemented in 5a</span>
+    <span><i>italic</i>&nbsp;Extension hook</span>
   </div>
   <div class="sr-only" id="protocol-path-summary" aria-live="polite"></div>
 
@@ -152,9 +209,11 @@
         quote: root.querySelector('#protocol-quote'),
         reserve: root.querySelector('#protocol-reserve'),
         commit: root.querySelector('#protocol-commit'),
+        release: root.querySelector('#protocol-release'),
+        modify: root.querySelector('#protocol-modify'),
       };
       const summary = root.querySelector('#protocol-path-summary');
-      const verbs = ['all', 'quote', 'reserve', 'commit'];
+      const verbs = ['all', ...Object.keys(lanes)];
 
       function apply(value) {
         const verb = verbs.includes(value) ? value : 'all';
@@ -162,7 +221,7 @@
         root.dataset.verb = verb;
         root.dataset.view = verb === 'all' ? 'all' : 'single';
         for (const [name, lane] of Object.entries(lanes)) lane.hidden = verb !== 'all' && verb !== name;
-        summary.textContent = verb === 'all' ? 'Showing all three branches.' : `Showing the execution path for ${verb}.`;
+        summary.textContent = verb === 'all' ? 'Showing all five branches.' : `Showing the execution path for ${verb}.`;
       }
 
       const saved = window.openai?.widgetState;

@@ -9,7 +9,8 @@
   very next quote sees it (slide 19).
 
 "Where is capacity deducted after accept": in ``pending()``. On failure ``rollback()`` returns it,
-on success ``confirm()`` makes it permanent, and ``release()`` gives it back when no longer needed.
+on success ``confirm()`` makes it permanent, and ``release()`` gives it back when no longer needed;
+``replace()`` changes a booking's profile in place (modify, step 5b).
 
 Time slots: slot i covers [origin + i·slot, origin + (i+1)·slot). A booking segment that touches a
 slot occupies that whole slot at the segment's rate — this is the quantization error of slide 23:
@@ -176,6 +177,26 @@ class CapacityLedger:
         with self._lock:
             self._require(booking_id, "confirmed")
             del self._bookings[booking_id]
+
+    def free(self, booking_id: str) -> None:
+        """Give a booking back whatever its state: pending → rollback, confirmed → release."""
+        if self.booking(booking_id).state == "pending":
+            self.rollback(booking_id)
+        else:
+            self.release(booking_id)
+
+    def replace(self, booking_id: str, profile: list[RateSegment]) -> None:
+        """Swap a booking's profile, same path and state, atomically: the new profile is checked with the
+        old one not counted; if it does not fit, the old one stays."""
+        slot_gbps = self._slot_gbps(profile)
+        with self._lock:
+            old = self._bookings.pop(booking_id)
+            try:
+                self._check_and_write(booking_id, old.path, slot_gbps)
+            except Exception:
+                self._bookings[booking_id] = old
+                raise
+            self._bookings[booking_id].state = old.state
 
     def _slot_gbps(self, profile: list[RateSegment]) -> dict[int, float]:
         slot_gbps: dict[int, float] = {}
