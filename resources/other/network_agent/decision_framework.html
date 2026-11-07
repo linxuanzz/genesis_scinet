@@ -1,0 +1,195 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="A proposed rules, LLM, and human decision framework with a digital-twin validation loop.">
+  <title>Rules, LLMs &amp; Humans · SciNet</title>
+  <style>
+    * { box-sizing: border-box; }
+    :root { color-scheme: light; font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; color: #172b43; }
+    body { margin: 0; background: #f4f6f9; padding: 36px 24px; }
+    main { max-width: 1360px; margin: 0 auto; }
+    header { display: flex; justify-content: space-between; align-items: end; gap: 24px; margin-bottom: 22px; }
+    .eyebrow { margin: 0 0 10px; color: #52657c; font-size: 12px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; }
+    h1 { font-size: clamp(28px, 3vw, 40px); font-weight: 650; letter-spacing: -.035em; margin: 0 0 10px; }
+    .subtitle { margin: 0; font-size: 15px; line-height: 1.6; color: #596b7f; }
+    nav { display: flex; gap: 3px; padding: 4px; border-radius: 10px; border: 1px solid #dbe2eb; background: white; flex-shrink: 0; }
+    button { border: 0; background: transparent; padding: 9px 13px; font: inherit; font-size: 13px; color: #52657c; border-radius: 7px; cursor: pointer; white-space: nowrap; }
+    button[aria-pressed="true"] { background: #eaf0fb; color: #204ca0; font-weight: 600; }
+    button:focus-visible { outline: 3px solid #426fd6; outline-offset: 3px; }
+    .sheet { background: white; border: 1px solid #dce3ec; border-radius: 18px; overflow: hidden; }
+    .diagram { overflow-x: auto; }
+    svg { display: block; width: 100%; min-width: 940px; height: auto; }
+    .fade { opacity: .17; }
+    .scene { transition: opacity .2s ease; }
+    .notes { border-top: 1px solid #e5eaf0; padding: 20px 28px; display: flex; gap: 25px; align-items: baseline; }
+    .notes strong { color: #44546b; font-size: 12px; text-transform: uppercase; letter-spacing: .07em; white-space: nowrap; }
+    .considerations { display: flex; flex-wrap: wrap; gap: 12px 28px; color: #596b7f; font-size: 14px; line-height: 1.6; }
+    footer { display: flex; justify-content: space-between; gap: 20px; margin-top: 16px; font-size: 12px; line-height: 1.6; color: #69798b; }
+    .legend { display: flex; gap: 20px; flex-wrap: wrap; }
+    .legend span { display: inline-flex; gap: 7px; align-items: center; }
+    .swatch { width: 18px; height: 3px; border-radius: 2px; background: #426fd6; }
+    .swatch.green { background: #258569; }
+    .swatch.dashed { height: 0; border-top: 2px dashed #7c8c9c; background: none; }
+    @media (max-width: 1000px) { header { align-items: start; flex-direction: column; gap: 18px; } }
+    @media (max-width: 600px) { body { padding: 24px 14px; } .notes { flex-direction: column; gap: 10px; padding: 18px; } footer { flex-direction: column; gap: 8px; } }
+    @media (prefers-reduced-motion: reduce) { .scene { transition: none; } }
+    @media print { body { padding: 0; background: white; } nav, footer { display: none; } .sheet { border: 0; } svg { min-width: 0; } .fade { opacity: 1; } @page { size: landscape; margin: 12mm; } }
+  </style>
+</head>
+<body>
+<main>
+  <header>
+    <div>
+      <p class="eyebrow">SciNet · Proposed design</p>
+      <h1>Rules, LLMs &amp; humans</h1>
+      <p class="subtitle">Escalate when needed. Turn experience into validated rules.</p>
+    </div>
+    <nav aria-label="Diagram focus">
+      <button type="button" aria-pressed="true" data-focus="all">Overview</button>
+      <button type="button" aria-pressed="false" data-focus="decision">Decision path</button>
+      <button type="button" aria-pressed="false" data-focus="learning">Learning loop</button>
+    </nav>
+  </header>
+
+  <section class="sheet" aria-label="Three-layer decision-making framework">
+    <div class="diagram" tabindex="0" aria-label="Scrollable framework diagram">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 664" role="img" aria-labelledby="diagram-title diagram-description">
+        <title id="diagram-title">Three-layer decision framework with a validated learning loop</title>
+        <desc id="diagram-description">A decision first goes to rules. If no applicable rule can resolve it, it escalates to an LLM, then to humans when necessary. Resolved decisions lead to actions. Experience from those actions informs LLM-generated candidate rules. A digital twin validates candidate rules before deployment to the rule layer. Failed candidates are revised or rejected. Applicability, rule interactions, and activation timing remain design considerations.</desc>
+        <defs>
+          <marker id="arrow-blue" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 10 5 0 10Z" fill="#426fd6"/></marker>
+          <marker id="arrow-green" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 10 5 0 10Z" fill="#258569"/></marker>
+          <marker id="arrow-gray" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 10 5 0 10Z" fill="#7c8c9c"/></marker>
+        </defs>
+        <style>
+          text { font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+          .section-label { font-size: 12px; font-weight: 700; letter-spacing: 1.6px; fill: #607189; }
+          .layer { font-size: 12px; font-weight: 700; letter-spacing: 1px; }
+          .node-title { font-size: 26px; font-weight: 650; fill: #172b43; }
+          .node-copy { font-size: 15px; fill: #56687d; }
+          .edge-label { font-size: 13px; fill: #52657c; }
+          .line-blue { fill: none; stroke: #426fd6; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+          .line-green { fill: none; stroke: #258569; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+          .line-gray { fill: none; stroke: #7c8c9c; stroke-width: 1.7; stroke-dasharray: 5 5; stroke-linecap: round; stroke-linejoin: round; }
+          .loop-title { font-size: 21px; font-weight: 600; fill: #172b43; }
+        </style>
+
+        <g id="decision-scene" class="scene">
+          <text x="44" y="44" class="section-label">01 / DECISION PATH</text>
+          <text x="66" y="174" class="node-copy">Decision</text>
+          <text x="66" y="196" class="node-copy">required</text>
+          <path d="M155 182H248" class="line-blue" marker-end="url(#arrow-blue)"/>
+
+          <rect x="250" y="125" width="250" height="118" rx="14" fill="#eef3ff" stroke="#b9ccf2"/>
+          <text x="274" y="152" class="layer" fill="#3e67b2">LAYER 1</text>
+          <text x="274" y="188" class="node-title">Rules</text>
+          <text x="274" y="215" class="node-copy">Apply existing decision logic</text>
+
+          <path d="M500 182H598" class="line-blue" marker-end="url(#arrow-blue)"/>
+          <text x="549" y="151" text-anchor="middle" class="edge-label">Unresolved</text>
+          <text x="549" y="168" text-anchor="middle" class="edge-label">by rules</text>
+
+          <rect x="600" y="125" width="250" height="118" rx="14" fill="#f3f0fc" stroke="#d1c4eb"/>
+          <text x="624" y="152" class="layer" fill="#7959a8">LAYER 2</text>
+          <text x="624" y="188" class="node-title">LLM</text>
+          <text x="624" y="215" class="node-copy">Reason beyond existing rules</text>
+
+          <path d="M850 182H948" class="line-blue" marker-end="url(#arrow-blue)"/>
+          <text x="899" y="151" text-anchor="middle" class="edge-label">Escalate</text>
+          <text x="899" y="168" text-anchor="middle" class="edge-label">if needed</text>
+
+          <rect x="950" y="125" width="250" height="118" rx="14" fill="#fff5e8" stroke="#e5cda7"/>
+          <text x="974" y="152" class="layer" fill="#96652a">LAYER 3</text>
+          <text x="974" y="188" class="node-title">Humans</text>
+          <text x="974" y="215" class="node-copy">Review and provide guidance</text>
+
+          <path d="M375 243V314H1075V243" class="line-blue"/>
+          <path d="M725 243V348" class="line-blue" marker-end="url(#arrow-blue)"/>
+          <text x="389" y="275" class="edge-label">Resolved</text>
+          <text x="739" y="275" class="edge-label">Resolved</text>
+          <text x="1089" y="275" class="edge-label">Resolved</text>
+          <circle cx="725" cy="314" r="4" fill="#426fd6"/>
+
+          <rect x="615" y="350" width="220" height="58" rx="29" fill="#f3f6fa" stroke="#cbd5e1"/>
+          <text x="725" y="386" text-anchor="middle" font-size="20" font-weight="600" fill="#263d57">Decision / action</text>
+        </g>
+
+        <g id="learning-scene" class="scene">
+          <path d="M1215 537H1244V83H375V123" class="line-green" marker-end="url(#arrow-green)"/>
+          <rect x="727" y="71" width="192" height="24" rx="12" fill="white"/>
+          <text x="823" y="87" text-anchor="middle" font-size="13" font-weight="600" fill="#258569">Deploy validated rules</text>
+
+          <path d="M725 408V442H190V478" class="line-green" marker-end="url(#arrow-green)"/>
+          <rect x="394" y="430" width="131" height="24" rx="12" fill="white"/>
+          <text x="459" y="446" text-anchor="middle" class="edge-label">Record outcomes</text>
+          <text x="44" y="462" class="section-label">02 / LEARNING LOOP</text>
+
+          <rect x="90" y="480" width="200" height="114" rx="14" fill="#f1f8f5" stroke="#bddbcd"/>
+          <text x="110" y="515" class="loop-title">Experience</text>
+          <text x="110" y="543" class="node-copy">Past decisions, outcomes</text>
+          <text x="110" y="565" class="node-copy">and human feedback</text>
+
+          <path d="M290 537H383" class="line-green" marker-end="url(#arrow-green)"/>
+          <rect x="385" y="480" width="230" height="114" rx="14" fill="#f3f0fc" stroke="#d1c4eb"/>
+          <text x="405" y="515" class="loop-title">LLM learns</text>
+          <text x="405" y="543" class="node-copy">Translate experience into</text>
+          <text x="405" y="565" font-size="15" font-weight="600" fill="#7959a8">candidate rules</text>
+
+          <path d="M615 537H703" class="line-green" marker-end="url(#arrow-green)"/>
+          <rect x="705" y="480" width="220" height="114" rx="14" fill="#f1f8f5" stroke="#bddbcd"/>
+          <text x="725" y="515" class="loop-title">Digital twin</text>
+          <text x="725" y="543" class="node-copy">Validate candidate rules</text>
+          <text x="725" y="565" class="node-copy">before deployment</text>
+
+          <path d="M925 537H1013" class="line-green" marker-end="url(#arrow-green)"/>
+          <text x="969" y="522" text-anchor="middle" class="edge-label">Pass</text>
+          <rect x="1015" y="480" width="200" height="114" rx="14" fill="#e9f5ee" stroke="#95c3aa"/>
+          <text x="1035" y="515" class="loop-title">Deploy</text>
+          <text x="1035" y="543" class="node-copy">Add validated rules</text>
+          <text x="1035" y="565" class="node-copy">to the rule layer</text>
+
+          <path d="M815 594V626H500V596" class="line-gray" marker-end="url(#arrow-gray)"/>
+          <rect x="540" y="613" width="235" height="25" rx="12" fill="white"/>
+          <text x="657" y="630" text-anchor="middle" class="edge-label">Fail → revise or reject candidate</text>
+        </g>
+      </svg>
+    </div>
+    <aside class="notes" aria-label="Open design considerations">
+      <strong>Still to define</strong>
+      <div class="considerations">
+        <span>Rule applicability &amp; scope</span>
+        <span>Interactions &amp; conflicts with existing rules</span>
+        <span>Activation timing &amp; validity period</span>
+      </div>
+    </aside>
+  </section>
+  <footer>
+    <div class="legend" aria-label="Legend">
+      <span><i class="swatch" aria-hidden="true"></i>Decision &amp; escalation</span>
+      <span><i class="swatch green" aria-hidden="true"></i>Validated learning loop</span>
+      <span><i class="swatch dashed" aria-hidden="true"></i>Revision path</span>
+    </div>
+    <span>Conceptual framework · implementation and validation policy remain to be defined.</span>
+  </footer>
+</main>
+<script>
+  const scenes = {
+    decision: document.getElementById('decision-scene'),
+    learning: document.getElementById('learning-scene')
+  };
+  document.querySelectorAll('[data-focus]').forEach(button => {
+    button.addEventListener('click', () => {
+      const focus = button.dataset.focus;
+      document.querySelectorAll('[data-focus]').forEach(item => {
+        item.setAttribute('aria-pressed', String(item === button));
+      });
+      Object.entries(scenes).forEach(([name, scene]) => {
+        scene.classList.toggle('fade', focus !== 'all' && focus !== name);
+      });
+    });
+  });
+</script>
+</body>
+</html>
