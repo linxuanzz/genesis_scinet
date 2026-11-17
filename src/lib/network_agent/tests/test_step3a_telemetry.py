@@ -3,12 +3,12 @@
 import pytest
 from pydantic import ValidationError
 
-from ..config import load_config
-from ..ledger import CapacityLedger
-from ..schemas import LinkSample, RateSegment
-from ..sim import MockNetwork
-from ..telemetry import MockTelemetry
-from ..topology import Topology
+from ..src.adapters.telemetry import MockTelemetry
+from ..src.models.config import load_config
+from ..src.models.schemas import LinkSample, RateSegment
+from ..src.models.topology import Topology
+from ..src.sim.sim import MockNetwork
+from ..src.state.ledger import CapacityLedger
 from .helpers import CFG, L2, L2_BACK, MAIN, TOPO, t
 
 

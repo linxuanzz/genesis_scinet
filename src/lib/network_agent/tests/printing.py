@@ -1,15 +1,19 @@
-"""Printing helpers shared by the demos (step 4 query, steps 5a / 5b conversations with graph A)."""
+"""Printing helpers shared by the demos (step 4 query, steps 5a / 5b conversations with graph A, step 7 runs of graph B)."""
 
 from datetime import timedelta
 
-from ..graphs.protocol import build_protocol_graph
-from ..schemas import (
-    CommitAck, CommitRequest, ErrorResponse, ModifyAck, ModifyRequest, QueryRequest, QueryResponse, ReleaseAck,
-    ReleaseRequest, ReserveAck, ReserveRequest,
-)
+from ..src.graphs.protocol.protocol import build_protocol_graph
+from ..src.graphs.runtime.runtime import build_runtime_graph
+from ..src.models.schemas import (CommitAck, CommitRequest, ErrorResponse, ModifyAck, ModifyRequest, QueryRequest,
+                                  QueryResponse, ReleaseAck, ReleaseRequest, ReserveAck, ReserveRequest)
 from .helpers import MAIN, make_ctx, t
 
 LEDGER_SPAN = (t(9), t(15))                       # time range of the printed ledger
+OFFER_STRATEGY_LABELS = {
+    "earliest_start": "Earliest start on this path",
+    "max_rate": "Highest rate on this path",
+    "min_rate": "Lowest rate meeting deadline on this path",
+}
 
 
 def sec(s):
@@ -76,13 +80,13 @@ class Session:
             for a, b, obs, own, avail, stale in ledger_runs(ctx.ledger, link, *LEDGER_SPAN, now):
                 print(f"      {a:%H:%M}–{b:%H:%M}   observed {obs:>5g}{' (stale)' if stale else '        '}"
                       f"   own {own:>5g}   available {avail:>5g}")
-        items = [(r, i) for r in ctx.reservations.values() for i in r.items]
-        print("  Reservations:" + ("" if items else " none"))
-        for r, i in items:
-            p = i.placement
-            booking = "given back" if i.offer_id in r.released else f"= {ctx.ledger.booking(i.booking_id).state}"
-            print(f"    {r.reserve_id} ({r.state}, expires {r.expires_at:%H:%M:%S})  {i.offer_id}: "
-                  f"{p.start:%H:%M:%S}–{p.end:%H:%M:%S} @ {p.gbps:g} Gbps   booking {i.booking_id} {booking}")
+        rows = [(r, o) for r in ctx.reservations.values() for o in r.reserved_offers]
+        print("  Reservations:" + ("" if rows else " none"))
+        for r, o in rows:
+            p = o.placement
+            booking = "given back" if o.offer_id in r.released else f"= {ctx.ledger.booking(o.booking_id).state}"
+            print(f"    {r.reserve_id} ({r.state}, expires {r.expires_at:%H:%M:%S})  {o.offer_id}: "
+                  f"{p.start:%H:%M:%S}–{p.end:%H:%M:%S} @ {p.gbps:g} Gbps   booking {o.booking_id} {booking}")
         states = list(ctx.sense._states.values())
         print("  SENSE instances:" + ("" if states else " none"))
         for s in states:
@@ -131,10 +135,11 @@ def print_response(resp, ctx):
             if r.status != "feasible":
                 print(f"  {r.transfer_id}: {r.status} ({r.reason.cause}: {r.reason.detail})")
             for o in r.offers:
-                s, q = o.rate_profile[0], ctx.offer_book.get(o.offer_id)   # path is not sent; shown from offer_book
+                s, q = o.rate_profile[0], ctx.offer_book.get(o.offer_id)   # path and strategy are internal diagnostics
+                strategy = f" [{OFFER_STRATEGY_LABELS[q.placement.strategy]}]" if q else ""
                 path = f"   [{hops(ctx.topology, q.placement.path)}]" if q else ""
-                print(f"  {o.offer_id}: {s.start:%H:%M} @ {s.gbps:>5g} Gbps → {o.predicted_finish_p50:%H:%M:%S}"
-                      f"   blocked_by={o.blocked_by}{path}")
+                print(f"  {o.offer_id}{strategy}: {s.start:%H:%M} @ {s.gbps:>5g} Gbps → {o.predicted_finish_p50:%H:%M:%S}"
+                      f"   limited_by={o.limited_by}{path}")
     elif isinstance(resp, ReserveAck):
         print(f"  ReserveAck {resp.reserve_id}: offers {resp.offer_ids}, expires {resp.expires_at:%H:%M:%S}")
     elif isinstance(resp, CommitAck):
@@ -155,3 +160,76 @@ def print_commitment(c):
     print(f"    {c.commitment_id}: {c.transfer_id} ({c.workflow_id}) on circuit {c.circuit_id}, "
           f"{seg.start:%H:%M:%S}–{seg.end:%H:%M:%S} @ {seg.gbps:g} Gbps")
     print(f"      binding: {b.src_uri} → {b.dst_uri}, vlan {b.vlan}, interface {b.interface}")
+
+
+# ── graph B runs (step 7) ─────────────────────────────────────────────────
+
+class RuntimeSession:
+    """One network agent with commitments in place, and a printer for graph B's runs on it."""
+
+    def __init__(self, title, net, ctx):
+        self.net, self.ctx, self.graph = net, ctx, build_runtime_graph()
+        print_network(title, net)
+        self.print_commitments()
+
+    def event(self, text):
+        print(f"\n{'─' * 100}\n!! {text}")
+
+    def run(self, event, now):
+        """Run graph B once; print the nodes it ran, what it found, judged and did; return the final state."""
+        kind = event.get("kind") if isinstance(event, dict) else event.kind
+        print(f"\n{'─' * 100}\n{now:%H:%M:%S}  graph B ← {kind}")
+        nodes, out = [], {}
+        for mode, chunk in self.graph.stream({"event": event, "now": now}, context=self.ctx,
+                                             stream_mode=["updates", "values"]):
+            if mode == "updates":
+                nodes += list(chunk)
+            else:
+                out = chunk
+        print("  path: " + " → ".join(nodes))
+        if out.get("duplicate_event"):
+            print("  duplicate alert: skipped before classification")
+        for d in out.get("deviations", []):
+            p = d.progress
+            print(f"  deviation {d.commitment_id}: cause {d.cause}, links {[link.split(':')[0] for link in d.links]}, "
+                  f"sent {p.bytes_sent / 1e12:g} TB of {d.due_bytes / 1e12:g} TB due"
+                  f"{', behind' if d.behind else ''}{', overruns its reservation' if d.overrun else ''}")
+        for a in out.get("assessments", []):
+            kept = a.finish_if_kept[1].strftime("%H:%M:%S") if a.finish_if_kept else "never"
+            cap = f", capped at the {a.cap_gbps:g} Gbps still seen" if a.cap_gbps is not None else ""
+            print(f"  forecast {a.commitment_id}: {a.remaining_bytes / 1e12:g} TB left; through by the reservation's "
+                  f"end: {'yes' if a.finishes_in_reservation else 'no'}; at its rate past its end: {kept} (deadline "
+                  f"{a.deadline:%H:%M}){cap}")
+        for cid in out.get("retry_deferred", []):
+            print(f"  {cid}: repair conditions unchanged; waiting to retry")
+        for p in out.get("plans", []):
+            print(f"  plan {p.assessment.commitment_id} (priority {p.assessment.priority}): {' → '.join(p.steps)}")
+        print("network agent → scheduling agent:" + ("" if out.get("reports") else " nothing"))
+        for cause, rs in out.get("reports", {}).items():
+            for r in rs:
+                seg = r.commitment.rate_profile[0]
+                done = f"p95 {r.predicted_finish_p95:%H:%M:%S}" if r.predicted_finish_p95 else "p95 never"
+                how = f" by {r.action}" + (f" to {r.lent_to}" if r.lent_to else "") if r.action else ""
+                print(f"  DeviationReport {r.commitment_id} [{cause}] {r.outcome}{how}: {done}, latest_finish "
+                      f"{r.latest_finish:%H:%M}; now {seg.start:%H:%M:%S}–{seg.end:%H:%M:%S} @ {seg.gbps:g} Gbps "
+                      f"on {r.commitment.circuit_id} (vlan {r.commitment.binding.vlan})")
+        for result in out.get("repair_results", []):
+            for why in result.tried:
+                print(f"    {result.commitment.commitment_id} tried {why}")
+        return out
+
+    def print_commitments(self):
+        print("  Commitments:")
+        for c in self.ctx.committed():
+            seg, req = c.commitment.rate_profile[0], c.reserved_offer.request
+            print(f"    {c.commitment.commitment_id} {req.id} ({req.workflow_id}, priority {req.priority}): "
+                  f"{req.bytes / 1e12:g} TB by {req.window.latest_finish:%H:%M}; {seg.start:%H:%M:%S}–{seg.end:%H:%M:%S}"
+                  f" @ {seg.gbps:g} Gbps on {c.commitment.circuit_id}"
+                  f"   [{hops(self.ctx.topology, c.reserved_offer.placement.path)}]")
+
+    def finishes(self, *instance_ids):
+        """When the simulated transfers actually finish (None: not by the end of the day)."""
+        out = {i: self.net.flow_trace(i, t(23)).finished_at for i in instance_ids}
+        print("  simulated: " + ", ".join(f"{i} finishes {f:%H:%M:%S}" if f else f"{i} does not finish"
+                                         for i, f in out.items()))
+        return out

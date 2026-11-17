@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Extend — decision & execution</title>
+<style>
+:root{color-scheme:light;--ink:#172b3b;--muted:#627380;--line:#d5dee5;--blue:#245da8;--teal:#137a6b;--orange:#a6601a;--paper:#fff;--bg:#f4f7fa}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif}main{max-width:1130px;margin:0 auto;padding:40px 36px 28px}.eyebrow{color:var(--blue);font-size:11px;font-weight:700;letter-spacing:.16em;text-transform:uppercase}header{display:flex;justify-content:space-between;align-items:center;gap:24px}h1{font-size:32px;letter-spacing:-.035em;margin:5px 0 4px;font-weight:650}header p{margin:0;color:var(--muted)}.badge{font-size:12px;border:1px solid var(--line);border-radius:30px;padding:7px 12px;white-space:nowrap;color:var(--muted)}nav{display:flex;gap:8px;flex-wrap:wrap;margin:26px 0 22px}button{font:inherit;font-size:13px;border:1px solid var(--line);background:var(--paper);color:var(--ink);border-radius:7px;padding:9px 15px;cursor:pointer}button:hover{border-color:var(--blue)}button[aria-pressed="true"]{background:var(--ink);border-color:var(--ink);color:white}button:focus-visible{outline:3px solid #96bce9;outline-offset:3px}.canvas{background:var(--paper);border:1px solid #e0e7ed;border-radius:14px;overflow:hidden}.diagram{display:block;width:100%;height:auto}.lane{fill:#f8fafc}.lane-title{font-size:19px;font-weight:650;fill:var(--ink)}.lane-sub{font-size:12px;fill:var(--muted)}.divider{stroke:var(--line);stroke-dasharray:4 6}.node rect{fill:white;stroke:var(--line);stroke-width:1.5;rx:10}.node .title{font-size:18px;font-weight:600;fill:var(--ink)}.node .body{font-size:14px;fill:var(--muted)}.node .number{font-size:12px;fill:var(--blue);font-weight:650}.edge{fill:none;stroke:var(--line);stroke-width:1.7;marker-end:url(#arrow)}.edge-label{fill:var(--muted);font-size:12px;paint-order:stroke;stroke:white;stroke-width:6px;stroke-linejoin:round}.node.active rect{fill:#edf4ff;stroke:var(--blue);stroke-width:2}.node.done.active rect{fill:#eaf7f3;stroke:var(--teal)}.node.alert.active rect{fill:#fff5e9;stroke:var(--orange)}.edge.active{stroke:var(--blue);stroke-width:2.5;marker-end:url(#arrow-active)}.node.dim{opacity:.38}.edge.dim,.edge-label.dim{opacity:.28}.status{display:flex;gap:14px;padding:17px 24px;border-top:1px solid #e5ebf0;align-items:baseline;min-height:66px}.status strong{font-size:13px;white-space:nowrap}.status span{font-size:13px;color:var(--muted)}footer{display:flex;justify-content:space-between;gap:20px;margin-top:15px;color:var(--muted);font-size:12px}.mobile-flow{display:none}@media(max-width:640px){main{padding:24px 16px}header{align-items:flex-start;gap:12px}h1{font-size:26px}.badge{white-space:normal;max-width:115px;font-size:11px}header p{font-size:13px}nav{gap:6px}button{padding:10px 12px;min-height:44px}.diagram{display:none}.mobile-flow{display:block;padding:20px}.mobile-step{padding:13px 0;border-bottom:1px solid var(--line)}.mobile-step small{display:block;color:var(--blue);font-size:11px;margin-bottom:3px}.mobile-step p{margin:3px 0;color:var(--muted);font-size:13px}.status{padding:16px;display:block}.status strong{display:block;margin-bottom:5px}footer{display:block}footer span{display:block;margin-bottom:4px}}
+@media print{body{background:white}main{padding:0;max-width:none}nav{display:none}.canvas{border:0}header{margin-bottom:18px}}
+</style>
+</head>
+<body>
+<main>
+<header><div><div class="eyebrow">Runtime coordination</div><h1>Extend: decide, then execute</h1><p>Network feasibility meets workflow approval.</p></div><span class="badge">Proposed workflow</span></header>
+<nav aria-label="Explore a decision path">
+<button type="button" data-mode="overview" aria-pressed="true">Overview</button>
+<button type="button" data-mode="approve" aria-pressed="false">Approve</button>
+<button type="button" data-mode="retry" aria-pressed="false">Reject & retry</button>
+<button type="button" data-mode="escalate" aria-pressed="false">No feasible plan</button>
+<button type="button" data-mode="conflict" aria-pressed="false">Capacity changed</button>
+</nav>
+<div class="canvas">
+<svg class="diagram" viewBox="0 0 1040 614" role="img" aria-labelledby="diagram-title diagram-desc">
+<title id="diagram-title">Extend proposal, approval, execution and escalation</title>
+<desc id="diagram-desc">The Network Agent proposes a feasible extension within the deadline. The Scheduling Agent evaluates downstream and cross-workflow impact. Approval leads to capacity revalidation and modification. Rejection supplies constraints for another proposal. If no acceptable network plan remains, the Scheduler replans the workflow.</desc>
+<defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#d5dee5"/></marker><marker id="arrow-active" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#245da8"/></marker></defs>
+<rect class="lane" x="22" y="18" width="486" height="574" rx="10"/><rect class="lane" x="532" y="18" width="486" height="574" rx="10"/>
+<text class="lane-title" x="60" y="52">Network Agent</text><text class="lane-sub" x="60" y="74">Capacity · transfer timing · execution</text>
+<text class="lane-title" x="570" y="52">Scheduling Agent</text><text class="lane-sub" x="570" y="74">Dependencies · cross-workflow decisions</text>
+<path class="edge" id="e-propose" d="M430 176 H610"/><text class="edge-label" id="l-propose" x="520" y="163" text-anchor="middle">Proposal</text>
+<path class="edge" id="e-approve" d="M610 205 H548 V334 H430"/><text class="edge-label" id="l-approve" x="520" y="322" text-anchor="middle">Approve · modify</text>
+<path class="edge" id="e-reject" d="M770 238 V280"/><text class="edge-label" id="l-reject" x="784" y="263">Reject</text>
+<path class="edge" id="e-retry" d="M930 334 H978 V100 H270 V118"/><text class="edge-label" id="l-retry" x="520" y="98" text-anchor="middle">Next plan · revised constraints</text>
+<path class="edge" id="e-complete" d="M270 394 V446"/><text class="edge-label" id="l-complete" x="283" y="426">Success</text>
+<path class="edge" id="e-conflict" d="M110 334 H66 V176 H110"/><text class="edge-label" id="l-conflict" x="51" y="273" text-anchor="middle" transform="rotate(-90 51 273)">Recheck fails · re-plan</text>
+<path class="edge" id="e-exhausted" d="M430 211 H488 V564 H610"/><text class="edge-label" id="l-exhausted" x="502" y="548">No acceptable plan</text>
+<g class="node" id="n-propose"><rect x="110" y="118" width="320" height="120"/><text class="number" x="132" y="144">01 / PROPOSE</text><text class="title" x="132" y="172">Find a feasible extension</text><text class="body" x="132" y="197">Rate · added time · expected finish</text><text class="body" x="132" y="218">Within deadline; check reservations</text></g>
+<g class="node" id="n-review"><rect x="610" y="118" width="320" height="120"/><text class="number" x="632" y="144">02 / REVIEW</text><text class="title" x="632" y="172">Evaluate workflow impact</text><text class="body" x="632" y="197">Downstream tasks & data readiness</text><text class="body" x="632" y="218">Other workflows & resource schedules</text></g>
+<g class="node" id="n-execute"><rect x="110" y="280" width="320" height="114"/><text class="number" x="132" y="307">03 / EXECUTE</text><text class="title" x="132" y="335">Recheck capacity → modify</text><text class="body" x="132" y="361">Apply only after approval</text><text class="body" x="132" y="381">Return execution result</text></g>
+<g class="node" id="n-constraints"><rect x="610" y="280" width="320" height="114"/><text class="number" x="632" y="307">FEEDBACK</text><text class="title" x="632" y="335">Return reason & constraints</text><text class="body" x="632" y="361">Try another acceptable network plan</text><text class="body" x="632" y="381">Do not execute the rejected proposal</text></g>
+<g class="node done" id="n-success"><rect x="110" y="446" width="320" height="130"/><text class="number" x="132" y="474">RESULT</text><text class="title" x="132" y="503">Reservation extended</text><text class="body" x="132" y="529">Updated timing sent to Scheduler</text><text class="body" x="132" y="551">Continue monitoring transfer progress</text></g>
+<g class="node alert" id="n-escalate"><rect x="610" y="446" width="320" height="130"/><text class="number" x="632" y="474">ESCALATE</text><text class="title" x="632" y="503">Replan the workflow</text><text class="body" x="632" y="529">Network Agent reports unresolved</text><text class="body" x="632" y="551">Scheduler adjusts tasks / resources</text></g>
+</svg>
+<div class="mobile-flow" id="mobile-flow"></div>
+<div class="status" aria-live="polite" aria-atomic="true"><strong id="status-title">Two owners, one decision loop.</strong><span id="status-text">Network Agent checks what is feasible. Scheduling Agent decides what is acceptable.</span></div>
+</div>
+<footer><span>Reservation end ≠ data-ready time.</span><span>Design proposal · approval exchange is not yet implemented.</span></footer>
+</main>
+<script>
+const paths = {
+ overview:{nodes:['propose','review','execute','constraints','success','escalate'],edges:[],title:'Two owners, one decision loop.',text:'Network Agent checks what is feasible. Scheduling Agent decides what is acceptable.'},
+ approve:{nodes:['propose','review','execute','success'],edges:['propose','approve','complete'],title:'Approved → execute.',text:'Revalidate capacity, apply the extension, and return the updated reservation.'},
+ retry:{nodes:['propose','review','constraints'],edges:['propose','reject','retry'],title:'Rejected → revise the plan.',text:'Use the Scheduler’s reason and constraints to find another option; seek approval for the revised proposal.'},
+ escalate:{nodes:['propose','escalate'],edges:['exhausted'],title:'No acceptable network plan remains.',text:'Report unresolved with reasons. The Scheduler considers changes at workflow level.'},
+ conflict:{nodes:['propose','review','execute'],edges:['propose','approve','conflict'],title:'Approval does not freeze capacity.',text:'If the execution-time capacity check fails, return a conflict and propose a revised plan.'}
+};
+const cards = {
+ propose:['Network Agent','Find a feasible extension','Rate, added time and expected finish within the deadline.'],
+ review:['Scheduling Agent','Evaluate workflow impact','Downstream data readiness and other workflows.'],
+ execute:['Network Agent','Recheck capacity → modify','Apply only after approval; return execution result.'],
+ constraints:['Scheduling Agent','Return reason & constraints','Network Agent tries another plan and requests approval.'],
+ success:['Network Agent','Reservation extended','Report updated timing; continue monitoring.'],
+ escalate:['Scheduling Agent','Replan the workflow','Network Agent reports unresolved; Scheduler adjusts tasks or resources.']
+};
+function select(mode){
+ const state=paths[mode];
+ document.querySelectorAll('button[data-mode]').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.mode===mode)));
+ document.querySelectorAll('.node').forEach(n=>{const active=state.nodes.includes(n.id.slice(2));n.classList.toggle('active',mode!=='overview'&&active);n.classList.toggle('dim',!active);});
+ document.querySelectorAll('.edge,.edge-label').forEach(e=>{const active=state.edges.includes(e.id.slice(2));e.classList.toggle('active',active);e.classList.toggle('dim',mode!=='overview'&&!active);});
+ document.getElementById('status-title').textContent=state.title;
+ document.getElementById('status-text').textContent=state.text;
+ const mobile=document.getElementById('mobile-flow');mobile.replaceChildren();
+ state.nodes.forEach(id=>{const entry=document.createElement('div');entry.className='mobile-step';const owner=document.createElement('small');owner.textContent=cards[id][0];const title=document.createElement('strong');title.textContent=cards[id][1];const detail=document.createElement('p');detail.textContent=cards[id][2];entry.append(owner,title,detail);mobile.append(entry);});
+}
+document.querySelectorAll('button[data-mode]').forEach(button=>button.addEventListener('click',()=>select(button.dataset.mode)));
+select('overview');
+</script>
+</body>
+</html>

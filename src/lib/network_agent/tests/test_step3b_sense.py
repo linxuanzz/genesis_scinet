@@ -3,11 +3,11 @@
 import pytest
 from pydantic import ValidationError
 
-from ..schemas import ServiceIntent, Terminal
-from ..sense import MockSense, SenseError
-from ..sim import MockNetwork
-from ..telemetry import MockTelemetry
-from ..topology import Topology
+from ..src.adapters.sense import MockSense, SenseError
+from ..src.adapters.telemetry import MockTelemetry
+from ..src.models.schemas import ServiceIntent, Terminal
+from ..src.models.topology import Topology
+from ..src.sim.sim import MockNetwork
 from .helpers import L2, TOPO, t
 from .helpers import MAIN as MAIN_PATH
 

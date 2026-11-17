@@ -100,7 +100,7 @@ bash tools/manage_kklab_scinet_agents/kklab.sh begin         # 切到 main（sub
 
 5. **`sync` 只同步已 commit 的内容。** `src/lib/network_agent` 下有未提交的改动时，脚本会直接停下。
 
-6. **测试必须保持包内相对导入。** `src/lib/network_agent/tests/` 里用的是 `from ..schemas import ...`、`from .helpers import ...`，所以同一份代码在两个仓库里都能运行（这边是 `src.lib.network_agent`，那边是顶层 `network_agent`）。新写的测试不要再用 `from src.lib.network_agent...`，否则同步过去后会 import 失败。
+6. **测试必须保持包内相对导入。** `src/lib/network_agent/tests/` 里用的是 `from ..src.models.schemas import ...`、`from .helpers import ...`，所以同一份代码在两个仓库里都能运行（这边是 `src.lib.network_agent`，那边是顶层 `network_agent`）。新写的测试不要再用 `from src.lib.network_agent...`，否则同步过去后会 import 失败。
 
 7. **共享仓库里的稳定接口。** 共享仓库 README 写明 telemetry agent 可以依赖四个接口：`schemas.LinkSample`、`telemetry.TelemetrySource`、`topology.Topology` / `TopologySpec`、`sim.MockNetwork`。**改这几个之前先通知同事**；其余模块（ledger、placement、graphs …）属于内部实现，可以随时改。
 

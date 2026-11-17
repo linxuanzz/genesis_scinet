@@ -15,7 +15,7 @@
     #network-runtime-b .na-success .na-node-inner { background:color-mix(in srgb,var(--viz-series-3) 9%,transparent); }
     #network-runtime-b .na-risk .na-node-inner { background:color-mix(in srgb,var(--viz-series-4) 8%,transparent); }
     #network-runtime-b .na-flow { position:relative; }
-    #network-runtime-b .na-runtime-layout { position:relative; display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); grid-template-areas:'. start .' '. classify noend' '. scan .' '. triage covered' '. plan .' '. execute .' 'repaired . risk' '. reports .' '. end .'; gap:48px 24px; align-items:center; justify-items:center; padding:4px 16px; }
+    #network-runtime-b .na-runtime-layout { position:relative; display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); grid-template-areas:'. start .' '. classify noend' '. scan .' '. triage finishes_in_reservation' '. plan .' '. execute .' 'repaired . risk' '. reports .' '. end .'; gap:48px 24px; align-items:center; justify-items:center; padding:4px 16px; }
     #network-runtime-b .na-connectors { position:absolute; inset:0; width:100%; height:100%; overflow:visible; pointer-events:none; }
     #network-runtime-b .na-connectors path { stroke:var(--muted-foreground); fill:none; stroke-width:1.4; }
     #network-runtime-b .na-connectors text { fill:var(--foreground); font-size:12px; paint-order:stroke; stroke:var(--background); stroke-width:5px; stroke-linejoin:round; }
@@ -25,20 +25,20 @@
     #network-runtime-b [data-view="single"] .na-runtime-layout { display:flex; flex-direction:column; gap:44px; max-width:420px; margin:0 auto; padding:4px 16px; }
     @media(max-width:620px) {
       #network-runtime-b .na-header { padding-right:0; }
-      #network-runtime-b .na-runtime-layout { grid-template-columns:repeat(2,minmax(0,1fr)); grid-template-areas:'start start' 'classify classify' 'noend scan' 'triage triage' 'covered plan' 'execute execute' 'repaired risk' 'reports reports' 'end end'; gap:50px 16px; }
+      #network-runtime-b .na-runtime-layout { grid-template-columns:repeat(2,minmax(0,1fr)); grid-template-areas:'start start' 'classify classify' 'noend scan' 'triage triage' 'finishes_in_reservation plan' 'execute execute' 'repaired risk' 'reports reports' 'end end'; gap:50px 16px; }
       #network-runtime-b .na-runtime-layout > .na-node { max-width:320px; }
       #network-runtime-b .na-runtime-layout > .na-terminal { max-width:100%; }
     }
   </style>
 
   <section id="runtime-graph-b" aria-label="Figure B: runtime detection, repair, and reporting workflow">
-    <div class="na-header"><h2>Figure B · Runtime Graph</h2><span class="text-small">Design 2026-11-06 · R1–R3 · Fast loop</span></div>
+    <div class="na-header"><h2>Figure B · Runtime Graph</h2><span class="text-small">Design 2026-11-06 · in code 2026-11-07 · R1–R3 · Fast loop</span></div>
     <div class="viz-controls na-controls">
       <label class="form-label" for="runtime-scenario">Select an execution path
         <select class="form-select" id="runtime-scenario">
           <option value="all">All branches</option>
           <option value="normal">No deviation → End</option>
-          <option value="covered">Deviation absorbed by the reservation → End</option>
+          <option value="finishes_in_reservation">Deviation absorbed by the reservation → End</option>
           <option value="repaired">A repair succeeds → repaired</option>
           <option value="failed">Every repair fails → unresolved</option>
           <option value="none">No repair is feasible → unresolved</option>
@@ -49,12 +49,12 @@
       <svg class="na-connectors" id="runtime-edges" aria-hidden="true"></svg>
       <div class="na-runtime-layout">
         <div class="na-node na-terminal" id="rb-start" style="grid-area:start">START · telemetry alert / tick</div>
-        <div class="na-node" id="rb-classify" style="grid-area:classify"><i class="na-node-inner"></i><code>classify_event</code><span class="na-label">R1 · Detect deviations</span><span class="na-detail text-small">Refresh the alerted links; per running transfer, compare bytes sent with bytes due under its reservation (from the actual start); cause = link_down / congestion / unlocated</span></div>
+        <div class="na-node" id="rb-classify" style="grid-area:classify"><i class="na-node-inner"></i><code>classify_event</code><span class="na-label">R1 · Detect deviations</span><span class="na-detail text-small">Refresh observations: alerted links afresh, otherwise the stale ones. A commitment deviates if its transfer lags the bytes due under its reservation (from the actual start) by more than the tolerance, cannot finish inside its reservation, or a hop has observed &lt; own in a slot it books from now on; cause = link_down / congestion / late_start / unlocated</span></div>
         <div class="na-node na-terminal" id="rb-noend" style="grid-area:noend">END · No deviation</div>
-        <div class="na-node" id="rb-scan" style="grid-area:scan"><i class="na-node-inner"></i><code>scan_path</code><span class="na-label">R2 · Find affected commitments on the path</span><span class="na-detail text-small">Slowed transfers, plus commitments, started or not, on links where observed &lt; own; remaining bytes, recent rate, p50 / p95</span></div>
-        <div class="na-node na-policy" id="rb-triage" style="grid-area:triage"><i class="na-node-inner"></i><code>◇ triage</code><span class="na-label">R3 · Does the reservation still cover the transfer?</span><span class="na-detail text-small">p95 ≤ the reservation's end → nothing to do; otherwise plan a repair</span></div>
-        <div class="na-node na-terminal" id="rb-covered" style="grid-area:covered">END · Still covered</div>
-        <div class="na-node na-policy" id="rb-plan" style="grid-area:plan"><i class="na-node-inner"></i><code>◇ plan_local_repair</code><span class="na-label">A new reservation for the remaining bytes within [now, latest_finish], smallest change first</span><span class="na-detail text-small">1 extend the end · 2 raise the rate where undamaged · 3 reroute (make-before-break) · 4 borrow slack from lower priority, which must still finish in time; higher priority repaired first</span></div>
+        <div class="na-node" id="rb-scan" style="grid-area:scan"><i class="na-node-inner"></i><code>scan_path</code><span class="na-label">R2 · Find affected commitments on the path</span><span class="na-detail text-small">Slowed transfers, plus commitments, started or not, on links where observed &lt; own; remaining bytes; the rate expected slot by slot (0 where a hop is down, a share in proportion where congested, capped by the recent rate if unlocated); p50 / p95</span></div>
+        <div class="na-node na-policy" id="rb-triage" style="grid-area:triage"><i class="na-node-inner"></i><code>◇ triage</code><span class="na-label">R3 · Does the reservation still cover the transfer?</span><span class="na-detail text-small">p95 ≤ the reservation's end, or already reported unresolved and unchanged → nothing to do; otherwise plan a repair</span></div>
+        <div class="na-node na-terminal" id="rb-finishes_in_reservation" style="grid-area:finishes_in_reservation">END · Finishes in reservation</div>
+        <div class="na-node na-policy" id="rb-plan" style="grid-area:plan"><i class="na-node-inner"></i><code>◇ plan_local_repair</code><span class="na-label">A new reservation for the remaining bytes within [now, latest_finish], smallest change first</span><span class="na-detail text-small">1 extend the end · 2 raise the rate (room needed in every slot ahead) · 3 reroute (make-before-break) · 4 borrow slack from lower priority, one rate step at a time, which must still finish in time; unlocated: extend only; late start: no borrowing; higher priority repaired first</span></div>
         <div class="na-node" id="rb-execute" style="grid-area:execute"><i class="na-node-inner"></i><code>execute_repair</code><span class="na-label">Operations shared with Figure A</span><span class="na-detail text-small">Ledger replace + SENSE modify; or new booking + propagate + commit, then cancel the old one. A failed step rolls back and the next one is tried</span></div>
         <div class="na-node na-success" id="rb-repaired" data-visual-marker="true" style="grid-area:repaired"><i class="na-node-inner"></i><code>outcome = repaired</code><span class="na-label">The commitment still holds</span><span class="na-detail text-small">Updated commitment attached; also sent for a commitment whose slack was borrowed</span></div>
         <div class="na-node na-risk" id="rb-risk" data-visual-marker="true" style="grid-area:risk"><i class="na-node-inner"></i><code>outcome = unresolved</code><span class="na-label">No local repair keeps the commitment</span><span class="na-detail text-small">Resources are left as they are; the scheduling agent decides (R4, through Figure A)</span></div>
@@ -74,16 +74,16 @@
       const select = root.querySelector('#runtime-scenario');
       const ns = 'http://www.w3.org/2000/svg';
       const paths = {
-        all: ['start','classify','noend','scan','triage','covered','plan','execute','repaired','risk','reports','end'],
+        all: ['start','classify','noend','scan','triage','finishes_in_reservation','plan','execute','repaired','risk','reports','end'],
         normal: ['start','classify','noend'],
-        covered: ['start','classify','scan','triage','covered'],
+        finishes_in_reservation: ['start','classify','scan','triage','finishes_in_reservation'],
         repaired: ['start','classify','scan','triage','plan','execute','repaired','reports','end'],
         failed: ['start','classify','scan','triage','plan','execute','risk','reports','end'],
         none: ['start','classify','scan','triage','plan','risk','reports','end'],
       };
       const edges = [
         ['start','classify',''], ['classify','noend','No deviation'], ['classify','scan','Deviation'],
-        ['scan','triage',''], ['triage','covered','Covered'], ['triage','plan','Not covered'],
+        ['scan','triage',''], ['triage','finishes_in_reservation','Finishes in reservation / already reported'], ['triage','plan','Does not finish in reservation'],
         ['plan','execute','Candidates'], ['plan','risk','None feasible'],
         ['execute','repaired','A step succeeded'], ['execute','risk','All failed'],
         ['repaired','reports',''], ['risk','reports',''], ['reports','end',''],

@@ -10,10 +10,10 @@ from datetime import timedelta
 
 import pytest
 
-from ..graphs.modify import build_modify_graph
-from ..graphs.protocol import build_protocol_graph
-from ..ledger import InsufficientCapacity
-from ..schemas import CommitAck, ModifyAck, ModifyRequest, QueryRequest, RateSegment, ReserveRequest
+from ..src.graphs.protocol.modify import build_modify_graph
+from ..src.graphs.protocol.protocol import build_protocol_graph
+from ..src.models.schemas import CommitAck, ModifyAck, ModifyRequest, QueryRequest, RateSegment, ReserveRequest
+from ..src.state.ledger import InsufficientCapacity
 from .helpers import L2, MAIN, commit, make_ctx, make_net, make_queried_ctx, modify, release, reserve, t, tr
 
 
@@ -42,7 +42,7 @@ def assert_unchanged_t1_2(net, ctx):
     """q1/T1/2 still 12:00–13:06:40 @ 100, in the ledger, in SENSE and in the reservation."""
     assert own_on_main(ctx, 12) == [100, 100, 100] and own_on_main(ctx, 13, 30) == [0, 0, 0]
     assert in_sense(net) == (t(12), t(13, 6) + timedelta(seconds=40), 100)
-    assert ctx.reservations["rsv-1"].items[0].placement.gbps == 100
+    assert ctx.reservations["rsv-1"].reserved_offers[0].placement.gbps == 100
 
 
 # ── success ───────────────────────────────────────────────────────────────
@@ -54,9 +54,10 @@ def test_modify_a_reserved_offer(net, ctx):
                              rate_profile=[RateSegment(start=t(12), end=t(14), gbps=50)])
     assert own_on_main(ctx, 12) == [50, 50, 50] and own_on_main(ctx, 13, 30) == [50, 50, 50]
     assert in_sense(net) == (t(12), t(14), 50)
-    item = ctx.reservations["rsv-1"].items[0]
-    assert (item.placement.end, item.intent.capacity_mbps, item.intent.end) == (t(14), 50_000, t(14))
-    assert ctx.sense.state("si-1").state == "reserved" and item.vlan == 3001
+    reserved_offer = ctx.reservations["rsv-1"].reserved_offers[0]
+    intent = reserved_offer.intent
+    assert (reserved_offer.placement.end, intent.capacity_mbps, intent.end) == (t(14), 50_000, t(14))
+    assert ctx.sense.state("si-1").state == "reserved" and reserved_offer.vlan == 3001
 
 
 def test_grows_into_what_it_already_holds(ctx):

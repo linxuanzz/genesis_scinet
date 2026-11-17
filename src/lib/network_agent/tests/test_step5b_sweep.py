@@ -6,9 +6,9 @@ Same queried agent as the release tests: q1 was queried at 09:00 and is valid un
 
 import pytest
 
-from ..graphs.protocol import build_protocol_graph
-from ..reclaim import SweepReport, sweep_expired
-from ..schemas import CommitAck, QueryRequest, ReserveRequest
+from ..src.graphs.protocol.protocol import build_protocol_graph
+from ..src.models.schemas import CommitAck, QueryRequest, ReserveRequest
+from ..src.shared.reclaim import SweepReport, sweep_expired
 from .helpers import L2, MAIN, commit, make_ctx, make_net, make_queried_ctx, release, reserve, t, tr
 
 PAIR = ("q1/T1/2", "q1/T2/1")
@@ -69,7 +69,7 @@ def test_failed_cancel_is_retried_by_the_next_sweep(net, ctx):
     report = sweep_expired(ctx, t(9, 1))
     assert report.expired == [] and report.stuck == {"rsv-1": ["q1/T1/2"]}
     r = ctx.reservations["rsv-1"]
-    assert r.state == "reserved" and [i.offer_id for i in r.held] == ["q1/T1/2"]
+    assert r.state == "reserved" and [o.offer_id for o in r.held] == ["q1/T1/2"]
     assert ctx.ledger.booking("rsv-1/q1/T1/2").state == "pending"           # the network still carries it
     assert commit(ctx, now=t(9, 1))["response"].code == "expired"
 

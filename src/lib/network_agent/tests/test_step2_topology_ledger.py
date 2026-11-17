@@ -3,10 +3,10 @@
 import pytest
 from pydantic import ValidationError
 
-from ..config import load_config
-from ..ledger import CapacityLedger, InsufficientCapacity, OutOfHorizon
-from ..schemas import LinkSample, RateSegment
-from ..topology import Topology
+from ..src.models.config import load_config
+from ..src.models.schemas import LinkSample, RateSegment
+from ..src.models.topology import Topology
+from ..src.state.ledger import CapacityLedger, InsufficientCapacity, OutOfHorizon
 from .helpers import ALT, CFG, DST, L1, L2, L4, MAIN, SRC, TOPO, t
 
 
@@ -139,12 +139,12 @@ def test_insufficient_is_atomic_and_located(ledger):
     """ALT's second hop L4 has only 40; asking for 50 fails, names L4 and the external capacity limit, and writes nothing on L1."""
     with pytest.raises(InsufficientCapacity) as e:
         ledger.pending("b1", ALT, seg(9, 0, 9, 30, 50))
-    assert (e.value.link_id, e.value.blocked_by) == (L4, "background_traffic")
+    assert (e.value.link_id, e.value.limited_by) == (L4, "background_traffic")
     assert ledger.available(ALT[0], 0) == 100
 
 
-def test_blocked_by_own_commitment(ledger):
+def test_limited_by_own_commitment(ledger):
     ledger.pending("b1", MAIN, seg(9, 0, 9, 30, 70))
     with pytest.raises(InsufficientCapacity) as e:
         ledger.pending("b2", MAIN, seg(9, 0, 9, 30, 50))
-    assert e.value.blocked_by == "own_commitment"   # without our own 70, the 100 would cover 50
+    assert e.value.limited_by == "own_commitment"   # without our own 70, the 100 would cover 50

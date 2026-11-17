@@ -6,8 +6,8 @@ reply without doing the work twice.
 
 import pytest
 
-from ..graphs.protocol import build_protocol_graph
-from ..schemas import CommitAck, CommitRequest, ModifyRequest, QueryResponse, RateSegment, ReleaseRequest
+from ..src.graphs.protocol.protocol import build_protocol_graph
+from ..src.models.schemas import CommitAck, CommitRequest, ModifyRequest, QueryResponse, RateSegment, ReleaseRequest
 from .helpers import C1, L2, R1, make_ctx, make_net, query_t1_t2, t
 
 
@@ -68,7 +68,7 @@ def test_resent_release_and_modify(agent):
         first = send(verb, msg)
         again = send(verb, msg)
         assert again["replayed"] and again["response"] == first["response"]
-    assert [i.offer_id for i in ctx.reservations["rsv-1"].held] == ["q1/T1/2"]
+    assert [o.offer_id for o in ctx.reservations["rsv-1"].held] == ["q1/T1/2"]
 
 
 def test_replay_runs_nothing(agent):

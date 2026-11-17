@@ -8,12 +8,10 @@ from datetime import timedelta
 
 import pytest
 
-from ..graphs.protocol import build_protocol_graph
-from ..schemas import (
-    CommitAck, CommitRequest, EndpointBinding, ErrorResponse, QueryRequest, QueryResponse, RateSegment, ReserveAck,
-    ReserveRequest,
-)
-from ..sense import SenseError
+from ..src.adapters.sense import SenseError
+from ..src.graphs.protocol.protocol import build_protocol_graph
+from ..src.models.schemas import (CommitAck, CommitRequest, EndpointBinding, ErrorResponse, QueryRequest,
+                                  QueryResponse, RateSegment, ReserveAck, ReserveRequest)
 from .helpers import DST, MAIN, SRC, commit, make_ctx, make_net, make_queried_ctx, reserve, t, tr
 
 

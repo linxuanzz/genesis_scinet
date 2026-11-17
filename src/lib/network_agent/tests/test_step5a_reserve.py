@@ -12,9 +12,9 @@ from datetime import timedelta
 
 import pytest
 
-from ..graphs.reserve import build_reserve_graph
-from ..ledger import InsufficientCapacity
-from ..schemas import RateSegment, ReserveAck, Terminal
+from ..src.graphs.protocol.reserve import build_reserve_graph
+from ..src.models.schemas import RateSegment, ReserveAck, Terminal
+from ..src.state.ledger import InsufficientCapacity
 from .helpers import DST, L2, MAIN, SRC, make_net, make_queried_ctx, reserve, t
 
 
@@ -47,15 +47,15 @@ def test_reserve_debits_ledger_and_holds_in_sense(net, ctx):
     assert ctx.ledger.available(L2, 0) == 0
 
     # SENSE: one instance in state reserved, on the same path
-    item = ctx.reservations["rsv-1"].items[0]
-    assert ctx.sense.state(item.instance_id).state == "reserved"
-    assert item.vlan == 3001
-    assert net._ours[item.instance_id][0] == MAIN
+    reserved_offer = ctx.reservations["rsv-1"].reserved_offers[0]
+    assert ctx.sense.state(reserved_offer.instance_id).state == "reserved"
+    assert reserved_offer.vlan == 3001
+    assert net._ours[reserved_offer.instance_id][0] == MAIN
 
 
 def test_intent_follows_the_offer(ctx):
     reserve(ctx, "q1/T1/2")
-    intent = ctx.reservations["rsv-1"].items[0].intent
+    intent = ctx.reservations["rsv-1"].reserved_offers[0].intent
     assert intent.terminals == [Terminal(uri=SRC), Terminal(uri=DST)]
     assert intent.path_inclusion == list(MAIN)
     assert (intent.capacity_mbps, intent.qos_class) == (100_000, "guaranteedCapped")
@@ -66,9 +66,9 @@ def test_intent_follows_the_offer(ctx):
 def test_group_is_reserved_together(ctx):
     resp = reserve(ctx, "q1/T1/2", "q1/T2/1")["response"]
     assert resp.offer_ids == ["q1/T1/2", "q1/T2/1"]
-    items = ctx.reservations["rsv-1"].items
-    assert [i.vlan for i in items] == [3001, 3002]
-    assert len({i.instance_id for i in items}) == 2           # one SENSE instance per offer
+    reserved_offers = ctx.reservations["rsv-1"].reserved_offers
+    assert [o.vlan for o in reserved_offers] == [3001, 3002]
+    assert len({o.instance_id for o in reserved_offers}) == 2           # one SENSE instance per offer
 
 
 def test_ttl_from_request_overrides_config(ctx):

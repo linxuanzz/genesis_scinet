@@ -6,9 +6,9 @@ offers together: q1/T1/2 (12:00 @ 100 Gbps, instance si-1) and q1/T2/1 (09:00 @ 
 
 import pytest
 
-from ..graphs.protocol import build_protocol_graph
-from ..schemas import CommitAck, QueryRequest, ReleaseAck, ReleaseRequest, ReserveAck, ReserveRequest
-from ..sense import SenseError
+from ..src.adapters.sense import SenseError
+from ..src.graphs.protocol.protocol import build_protocol_graph
+from ..src.models.schemas import CommitAck, QueryRequest, ReleaseAck, ReleaseRequest, ReserveAck, ReserveRequest
 from .helpers import MAIN, commit, make_ctx, make_net, make_queried_ctx, release, reserve, t, tr
 
 PAIR = ("q1/T1/2", "q1/T2/1")
@@ -62,7 +62,7 @@ def test_partial_release_keeps_the_rest(net, ctx):
     assert own_on_main(ctx, 9) == [0, 0, 0]
     assert own_on_main(ctx, 12) == [100, 100, 100]
     r = ctx.reservations["rsv-1"]
-    assert r.state == "committed" and [i.offer_id for i in r.held] == ["q1/T1/2"]
+    assert r.state == "committed" and [o.offer_id for o in r.held] == ["q1/T1/2"]
     assert [c.transfer_id for c in ctx.commitments.values()] == ["T1"]
     assert list(net._ours) == ["si-1"]
 
@@ -90,7 +90,7 @@ def test_released_offer_can_be_reserved_again(ctx):
 def test_unknown_target(net, ctx, over, code):
     reserve(ctx, *PAIR)
     assert release(ctx, **over)["response"].code == code
-    assert ctx.reservations["rsv-1"].held == ctx.reservations["rsv-1"].items
+    assert ctx.reservations["rsv-1"].held == ctx.reservations["rsv-1"].reserved_offers
 
 
 def test_cannot_release_twice(ctx):
@@ -124,7 +124,7 @@ def test_failed_cancel_keeps_that_item(net, ctx):
     assert resp.code == "sense_failure"
     assert "still held: ['q1/T1/2" in resp.detail and "released: ['q1/T2/1']" in resp.detail
     r = ctx.reservations["rsv-1"]
-    assert r.state == "reserved" and [i.offer_id for i in r.held] == ["q1/T1/2"]
+    assert r.state == "reserved" and [o.offer_id for o in r.held] == ["q1/T1/2"]
     assert ctx.ledger.booking("rsv-1/q1/T1/2").state == "pending"
     assert list(net._ours) == ["si-1"]
 

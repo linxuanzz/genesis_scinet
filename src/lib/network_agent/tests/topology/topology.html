@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Test Topology</title>
-<!-- The network built by tests/helpers.py (TOPO, make_net). Keep in sync when TOPO changes. -->
+<!-- Topology from tests/helpers.py; traffic matches tests/test_step5b_final_demo.py. -->
 <style>
   :root {
     --bg: #ffffff; --fg: #1d2129; --muted: #69707d; --border: #d5d9e0; --panel: #f6f7f9;
@@ -61,7 +61,7 @@
 <body>
 <main>
   <h1>Test topology</h1>
-  <p>The simulated network every network agent test runs on (<code>tests/helpers.py</code>: <code>TOPO</code>, <code>make_net</code>).
+  <p>Mock network for the five-verb demo (<code>tests/test_step5b_final_demo.py</code>).
      Test transfers go from <code>anl-n02</code> to <code>ornl-n01</code>. Capacities are per direction.</p>
 
   <div class="figure">
@@ -97,10 +97,10 @@
       <text class="lbl" x="652" y="226" style="text-anchor:start"><tspan class="id">L4</tspan> <tspan class="cap">40 Gbps</tspan></text>
       <text class="lbl" x="808" y="226" style="text-anchor:end"><tspan class="id">L5</tspan> <tspan class="cap">40 Gbps</tspan></text>
 
-      <!-- background traffic on L2 (make_net default) -->
+      <!-- background traffic on L2 (five-verb demo override) -->
       <rect class="traffic-bar" x="676" y="140" width="108" height="5" rx="2"/>
-      <text class="traffic" x="730" y="162">background 60 Gbps</text>
-      <text class="traffic" x="730" y="177">09:00–12:00 → 40 left</text>
+      <text class="traffic" x="730" y="162">background 70 Gbps</text>
+      <text class="traffic" x="730" y="177">09:00–12:00 → 30 left</text>
 
       <!-- nodes -->
       <g class="node"><rect x="34" y="104" width="124" height="32" rx="6"/><text x="96" y="125">aps-beamline-8id</text></g>
@@ -125,7 +125,7 @@
   <div class="table-wrap">
     <table>
       <tr><th>Name</th><th>Directed links</th><th>Bottleneck</th><th class="note">Note</th></tr>
-      <tr><td><code>MAIN</code></td><td><code>L1 → L2 → L3</code></td><td>100 Gbps (40 before 12:00)</td>
+      <tr><td><code>MAIN</code></td><td><code>L1 → L2 → L3</code></td><td>100 Gbps (30 during 09:00–12:00)</td>
           <td class="note">L2 carries the background traffic</td></tr>
       <tr><td><code>ALT</code></td><td><code>L1 → L4 → L5 → L3</code></td><td>40 Gbps</td>
           <td class="note">shares L1 and L3 with MAIN; L4, L5 and esnet-nash are made up for multi-path tests</td></tr>
@@ -146,8 +146,9 @@
       <tr><td>L5</td><td>esnet-nash — esnet-chi</td><td>40 Gbps</td><td><code>L5 = "L5:esnet-nash&gt;esnet-chi"</code></td></tr>
     </table>
   </div>
-  <p style="margin-top:10px">The slide gives no capacities, so the 100 Gbps links are assumed. <code>make_net(background_gbps=60)</code> adds the
-     L2 background traffic shown above; individual tests and demo scenarios add more with <code>net.add_background(...)</code>.</p>
+  <p style="margin-top:10px">The slide gives no capacities, so the 100 Gbps links are assumed. This demo uses
+     <code>make_net(background_gbps=70)</code>: MAIN has 30 Gbps available during 09:00–12:00, while ALT has 40 Gbps.
+     Other tests may use different background traffic; the shared helper defaults to 60 Gbps.</p>
 </main>
 </body>
 </html>

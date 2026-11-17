@@ -7,7 +7,7 @@ How to run (from the repository root), with one scenario as the argument:
 scenarios: test1 / test2 / test3 / test4 / test5
 """
 
-from ..schemas import ErrorResponse, ModifyAck, ReleaseAck, ReleaseRequest, ReserveAck, ReserveRequest
+from ..src.models.schemas import ErrorResponse, ModifyAck, ReleaseAck, ReleaseRequest, ReserveAck, ReserveRequest
 from .helpers import C1, L2, R1, make_net, modify_t1, query_t1_t2, t
 from .printing import Session, sec
 

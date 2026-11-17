@@ -8,10 +8,9 @@ from datetime import datetime, timedelta
 import pytest
 from pydantic import ValidationError
 
-from ..schemas import (
-    CommitAck, Commitment, EndpointBinding, Offer, QueryRequest, QueryResponse,
-    RateSegment, RejectReason, ReserveRequest, TimeWindow, TransferQuery, TransferRequest,
-)
+from ..src.models.schemas import (CommitAck, Commitment, EndpointBinding, Offer, QueryRequest, QueryResponse,
+                                  RateSegment, RejectReason, ReserveRequest, TimeWindow, TransferQuery,
+                                  TransferRequest)
 from .helpers import DST, SRC, t
 
 

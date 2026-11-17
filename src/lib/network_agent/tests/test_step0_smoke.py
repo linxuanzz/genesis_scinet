@@ -7,7 +7,7 @@ import yaml
 from langgraph.graph import END, START, StateGraph
 from pydantic import ValidationError
 
-from ..config import load_config
+from ..src.models.config import load_config
 from .helpers import CFG
 
 
@@ -26,6 +26,11 @@ def test_config_from_yaml(tmp_path):
     {k: v for k, v in CFG.items() if k != "slot_seconds"},  # missing
     {**CFG, "slot_secs": 900},                               # misspelled
     {**CFG, "slot_seconds": 0},                              # not positive
+    {k: v for k, v in CFG.items() if k != "repair_retry_seconds"},
+    {**CFG, "repair_retry_seconds": 0},
+    {**CFG, "repair_retry_seconds": -1},
+    {k: v for k, v in CFG.items() if k != "event_dedup_seconds"},
+    {**CFG, "event_dedup_seconds": 0},
     {**CFG, "horizon_seconds": 1000},                        # not a whole number of slots
 ])
 def test_config_rejects_bad_input(bad):

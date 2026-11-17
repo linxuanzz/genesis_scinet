@@ -10,8 +10,8 @@ from datetime import timedelta
 
 import pytest
 
-from ..graphs.query import build_query_graph
-from ..schemas import QueryRequest, RateSegment
+from ..src.graphs.protocol.query import build_query_graph
+from ..src.models.schemas import QueryRequest, RateSegment
 from .helpers import L2, MAIN, make_ctx, make_net, query, t, tr
 from .printing import hops, print_network
 
@@ -47,7 +47,7 @@ def test_slide7_three_offers(graph, ctx):
         (t(12), 100, t(13, 6) + timedelta(seconds=40)),
         (t(9), 20, t(14, 33) + timedelta(seconds=20)),
     ]
-    assert [o.blocked_by for o in offers] == ["background_traffic", None, None]
+    assert [o.limited_by for o in offers] == ["background_traffic", None, None]
     assert [o.offer_id for o in offers] == ["q1/T1/1", "q1/T1/2", "q1/T1/3"]
 
 
@@ -80,14 +80,14 @@ def test_query_is_read_only(graph, ctx):
     assert all(ctx.ledger.own(link, i) == 0 for link in MAIN for i in range(ctx.ledger.n_slots))
 
 
-# ── blocked_by: blocked by our own bookings ───────────────────────────────
+# ── limited_by: limited by our own bookings ───────────────────────────────
 
-def test_blocked_by_own_commitment(net, graph, ctx):
+def test_limited_by_own_commitment(net, graph, ctx):
     """Remove background traffic and book 30 ourselves on the main path instead: the earliest start can only get 70, because of own_commitment."""
     net._background[L2].clear()
     ctx.ledger.pending("ours", MAIN, [RateSegment(start=t(9), end=t(12), gbps=30)])
     first = query(graph, ctx, tr())["response"].results[0].offers[0]
-    assert (first.rate_profile[0].gbps, first.blocked_by) == (70, "own_commitment")
+    assert (first.rate_profile[0].gbps, first.limited_by) == (70, "own_commitment")
 
 
 # ── the four rejection cases ──────────────────────────────────────────────
@@ -187,7 +187,7 @@ def print_scenario(title, net, ctx, req, now, out):
         for o in r.offers:
             s, p = o.rate_profile[0], ctx.offer_book[o.offer_id].placement   # the path and rule are not exposed externally
             print(f"  {o.offer_id}: start {s.start:%H:%M} @ {s.gbps:>5g} Gbps → finish {o.predicted_finish_p50:%H:%M:%S}"
-                  f"   [path{path_no[p.path]}, rule {p.strategy}]   blocked_by={o.blocked_by}")
+                  f"   [path{path_no[p.path]}, rule {p.strategy}]   limited_by={o.limited_by}")
 
 
 def demo(title=SCENARIOS["test1"][0], background_gbps=60, deadline=t(15)):

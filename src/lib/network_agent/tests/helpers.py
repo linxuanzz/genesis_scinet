@@ -2,26 +2,28 @@
 
 from datetime import datetime, timezone
 
-from ..config import load_config
-from ..context import AgentContext
-from ..estimate import IdealRateModel
-from ..graphs.commit import build_commit_graph
-from ..graphs.modify import build_modify_graph
-from ..graphs.query import build_query_graph
-from ..graphs.release import build_release_graph
-from ..graphs.reserve import build_reserve_graph
-from ..ledger import CapacityLedger
-from ..schemas import (CommitRequest, ModifyRequest, QueryRequest, RateSegment, ReleaseRequest, ReserveRequest,
-                       TimeWindow, TransferRequest)
-from ..sense import MockSense
-from ..sim import MockNetwork
-from ..telemetry import MockTelemetry
-from ..topology import Topology
+from ..src.adapters.sense import MockSense
+from ..src.adapters.telemetry import MockFlows, MockTelemetry
+from ..src.context.context import AgentContext
+from ..src.graphs.protocol.commit import build_commit_graph
+from ..src.graphs.protocol.modify import build_modify_graph
+from ..src.graphs.protocol.query import build_query_graph
+from ..src.graphs.protocol.release import build_release_graph
+from ..src.graphs.protocol.reserve import build_reserve_graph
+from ..src.graphs.runtime.runtime import build_runtime_graph
+from ..src.models.config import load_config
+from ..src.models.schemas import (CommitRequest, ModifyRequest, QueryRequest, RateSegment, ReleaseRequest,
+                                  ReserveRequest, TimeWindow, TransferRequest)
+from ..src.models.topology import Topology
+from ..src.planning.estimate import IdealRateModel
+from ..src.sim.sim import MockNetwork
+from ..src.state.ledger import CapacityLedger
 
 UTC = timezone.utc
 
 CFG = {"slot_seconds": 900, "horizon_seconds": 86400, "reserve_ttl_seconds": 60, "query_ttl_seconds": 900,
-       "max_paths": 3, "rate_step_gbps": 10}
+       "max_paths": 3, "rate_step_gbps": 10, "progress_lag_tolerance": 0.05, "repair_retry_seconds": 900,
+       "event_dedup_seconds": 60}
 
 
 def t(hh, mm=0, day=20):
@@ -78,14 +80,15 @@ def make_ctx(net):
     cfg = load_config(CFG)
     return AgentContext(cfg=cfg, topology=net.topology, ledger=CapacityLedger(net.topology, cfg, origin=t(9)),
                         telemetry=CountingTelemetry(net, validity_seconds=300),
-                        sense=MockSense(net, vlan_range=(3001, 3010)), rate_model=IdealRateModel())
+                        sense=MockSense(net, vlan_range=(3001, 3010)), rate_model=IdealRateModel(),
+                        flows=MockFlows(net))
 
 
 # ── requests ───────────────────────────────────────────────────────────────
 
-def tr(id="T1", src=SRC, dst=DST, nbytes=50 * 10**12, window=(t(9), t(15)), **over):
+def tr(id="T1", src=SRC, dst=DST, nbytes=50 * 10**12, window=(t(9), t(15)), priority=1, workflow_id="WF-1", **over):
     """A transfer request; the defaults are T1 of slide 7 (50 TB, 09:00–15:00)."""
-    return TransferRequest(id=id, workflow_id="WF-1", priority=1, src=src, dst=dst, bytes=nbytes,
+    return TransferRequest(id=id, workflow_id=workflow_id, priority=priority, src=src, dst=dst, bytes=nbytes,
                            is_estimate=False, divisible=False,
                            window=TimeWindow(earliest_start=window[0], latest_finish=window[1]), **over)
 
@@ -147,3 +150,48 @@ def make_queried_ctx(net):
     ctx = make_ctx(net)
     build_query_graph().invoke({"raw": query_t1_t2().model_dump(), "now": t(9)}, context=ctx)
     return ctx
+
+
+def make_committed_ctx(net, *offer_ids):
+    """make_queried_ctx, then reserve and commit these offers as rsv-1; by default only q1/T1/1, i.e.
+    cmt-1 on si-1: 09:00–11:46:40 @ 40 Gbps along MAIN (L2 has 40 left before 12:00)."""
+    ctx = make_queried_ctx(net)
+    reserve(ctx, *(offer_ids or ("q1/T1/1",)))
+    commit(ctx)
+    return ctx
+
+
+def runtime(ctx, event, now, policy=None):
+    """Run graph B once on this event (a model or a dict); returns the final graph state."""
+    return build_runtime_graph(policy).invoke({"event": event, "now": now}, context=ctx)
+
+
+TICK = {"kind": "tick"}
+
+
+def visited(ctx, event, now, policy=None):
+    """The nodes graph B runs on this event, in order."""
+    updates = build_runtime_graph(policy).stream({"event": event, "now": now}, context=ctx, stream_mode="updates")
+    return [node for update in updates for node in update]
+
+
+def book(ctx, query_id, transfer, k, now=t(9)):
+    """Query one transfer as query_id, then reserve and commit its k-th offer; returns the SENSE instance id."""
+    raw = QueryRequest(query_id=query_id, bundle=[transfer], mode="all_or_nothing").model_dump()
+    build_query_graph().invoke({"raw": raw, "now": now}, context=ctx)
+    reserve_id = reserve(ctx, f"{query_id}/{transfer.id}/{k}", query_id=query_id, now=now)["response"].reserve_id
+    commit(ctx, reserve_id, now=now)
+    return ctx.reservations[reserve_id].reserved_offers[0].instance_id
+
+
+def reports(out):
+    """Graph B's reports, flattened: [(commitment_id, cause, outcome, action)]."""
+    return [(r.commitment_id, r.cause, r.outcome, r.action) for rs in out.get("reports", {}).values() for r in rs]
+
+
+def follow_reroutes(net, out, now):
+    """Act as the WMS: move each rerouted transfer to its new circuit."""
+    old = {d.commitment_id: d.committed.reserved_offer.instance_id for d in out["deviations"]}
+    for r in (r for rs in out.get("reports", {}).values() for r in rs):
+        if r.action == "reroute":
+            net.switch_flow(old[r.commitment_id], r.commitment.circuit_id, now)
