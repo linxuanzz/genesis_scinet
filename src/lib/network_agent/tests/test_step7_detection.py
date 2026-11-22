@@ -165,6 +165,16 @@ def test_recent_rate_from_two_readings(ctx, net):
     assert ctx.progress_seen["si-1"].sampled_at == t(10, 40)
 
 
+def test_a_transfer_that_started_between_readings_is_not_slow():
+    """Read at 09:05 before the start, again at 09:10: 5 minutes at full rate since 09:05, not 10."""
+    net = make_net()
+    ctx = make_committed_ctx(net)
+    net.start_flow("si-1", t(9, 5), 50 * TB)
+    assert runtime(ctx, TICK, t(9, 4))["deviations"] == []
+    out = runtime(ctx, TICK, t(9, 10))
+    assert [d for d in out["deviations"] if d.slow] == []
+
+
 # ── link branch ───────────────────────────────────────────────────────────
 
 def test_damage_ahead_of_a_running_transfer(ctx, net):

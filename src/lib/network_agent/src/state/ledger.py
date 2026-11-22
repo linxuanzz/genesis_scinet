@@ -4,7 +4,9 @@
   semantics). Initialized to the topology's configured capacity, then overwritten: past and current
   slots with telemetry samples by ``apply()``, future slots with the network forecast by ``put()``
   (runtime/forecast.py). Every number carries its source, sample time and expiry (slide 12: "every
-  number carries its source"). A slot holds two values: ``gbps``, the pessimistic one (p95), which
+  number carries its source"). Besides observed and own, the ledger keeps the SciNet demand forecast
+  (forecast part B: SciNet transfers expected but not requested yet), apart from both; nothing deducts it
+  yet. A slot holds two values: ``gbps``, the pessimistic one (p95), which
   planning, detection and the capacity checks here use; and ``p50_gbps``, the typical one, which only
   the finish-time assessment reads to give a p50. A measurement has no spread: p50 = p95.
 - own: the sum of our own bookings. A booking is in one of two states: pending (held at reserve time)
@@ -81,6 +83,7 @@ class CapacityLedger:
     origin: datetime                                # start of slot 0; aligned to a slot boundary on construction
     _observed: dict[str, list[Observation]] = field(init=False)
     _bookings: dict[str, Booking] = field(init=False, default_factory=dict)
+    _scinet_demand: dict[tuple[str, int], float] = field(init=False, default_factory=dict)  # (link, slot) → Gbps
     _lock: threading.Lock = field(init=False, default_factory=threading.Lock)
 
     def __post_init__(self):
@@ -121,6 +124,7 @@ class CapacityLedger:
             trial._observed = {link: list(slots) for link, slots in self._observed.items()}
             trial._bookings = {key: Booking(b.id, b.path, dict(b.slot_gbps), b.state)
                                for key, b in self._bookings.items()}
+            trial._scinet_demand = dict(self._scinet_demand)
         return trial
 
     def observed(self, link_id: str, i: int) -> Observation:
@@ -170,6 +174,15 @@ class CapacityLedger:
         with self._lock:
             for (link_id, i), obs in per_slot.items():
                 self._observed[link_id][i] = obs
+
+    def scinet_demand(self, link_id: str, i: int) -> float:
+        """SciNet traffic expected but not booked yet (forecast part B); kept apart from observed and own."""
+        return self._scinet_demand.get((link_id, i), 0.0)
+
+    def put_scinet_demand(self, demand: dict[tuple[str, int], float]) -> None:
+        """Replace the whole SciNet demand forecast."""
+        with self._lock:
+            self._scinet_demand = dict(demand)
 
     def put(self, observations: dict[tuple[str, int], Observation]) -> None:
         """Write observations slot by slot ((directed link, slot) → observation), as the forecast computes them."""

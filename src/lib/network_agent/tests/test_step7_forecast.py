@@ -13,9 +13,9 @@ import pytest
 from ..src.adapters.forecast_inputs import MockForecastInputs
 from ..src.graphs.protocol.query import build_query_graph
 from ..src.models.schemas import TelemetryAlert, Tick
-from ..src.runtime.forecast import FORECAST, forecast_links, refresh, update_forecast
+from ..src.runtime.forecast import FORECAST, forecast_links, forecast_scinet_demand, refresh, update_forecast
 from ..src.state.ledger import Observation
-from .helpers import L2, L3, MAIN, make_committed_ctx, make_ctx, make_net, query_t1_t2, runtime, t
+from .helpers import L2, L3, MAIN, make_committed_ctx, make_ctx, make_net, query_t1_t2, runtime, t, tr
 
 TB = 10**12
 DECAY = 1800
@@ -165,3 +165,39 @@ def test_a_tick_recomputes_only_expired_forecasts():
 def test_p50_reads_the_typical_value():
     o = Observation(gbps=20, source=FORECAST, at=t(9), valid_until=t(9, 5), up=False, p50_gbps=80)
     assert (o.capacity("p50"), o.capacity("p95")) == (80, 0)
+
+
+# ── part B: SciNet's own demand ───────────────────────────────────────────
+
+class ExpectedRequests:
+    """A scheduling agent that expects these transfers."""
+
+    def __init__(self, *requests):
+        self.requests = list(requests)
+
+    def future_demand(self, now, until):
+        return [r for r in self.requests if r.window.earliest_start < until]
+
+
+def test_without_a_demand_source_there_is_no_scinet_demand():
+    assert forecast_scinet_demand(make_ctx(make_net()), t(9)) is None
+
+
+def test_expected_transfers_become_demand_on_their_shortest_path():
+    """9 TB between 10:00 and 10:30 needs 40 Gbps on MAIN for 30 minutes; it is not booked, so own stays 0."""
+    ctx = make_ctx(make_net())
+    ctx.scinet_demand = ExpectedRequests(tr("T9", nbytes=9 * TB, window=(t(10), t(10, 30))))
+    forecast = forecast_scinet_demand(ctx, t(9))
+    [e] = forecast.expected
+    assert (e.path, e.gbps, e.start, e.end) == (MAIN, 40, t(10), t(10, 30))
+    assert ctx.ledger.scinet_demand(L2, slot(ctx, t(10, 15))) == 40 and ctx.ledger.own(L2, slot(ctx, t(10, 15))) == 0
+    assert ctx.ledger.scinet_demand(L2, slot(ctx, t(10, 30))) == 0
+    assert forecast.would_not_fit == {}                              # L2 leaves 40 before 12:00
+
+
+def test_demand_that_would_not_fit_is_reported():
+    """18 TB in the same half hour needs 80 Gbps; L2 leaves 40 before 12:00 (registered traffic)."""
+    ctx = make_ctx(make_net())
+    ctx.scinet_demand = ExpectedRequests(tr("T9", nbytes=18 * TB, window=(t(10), t(10, 30))))
+    forecast = forecast_scinet_demand(ctx, t(9))
+    assert {link for link, _ in forecast.would_not_fit["T9"]} == {L2}

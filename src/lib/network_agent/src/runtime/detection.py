@@ -221,11 +221,14 @@ def reserved_rate(profile: list[RateSegment], now: datetime) -> float:
 
 
 def recent_rate(previous: FlowProgress | None, current: FlowProgress) -> float | None:
-    """The average rate between two readings of a flow."""
-    if previous is None or previous.sampled_at >= current.sampled_at:
+    """The average rate between two readings of a flow, over the part of that interval it was running (a
+    transfer that started in between is not slow for the time before it started)."""
+    if previous is None or previous.sampled_at >= current.sampled_at or current.started_at is None:
         return None
-    seconds = (current.sampled_at - previous.sampled_at).total_seconds()
-    return gbps_of(current.bytes_sent - previous.bytes_sent, seconds)
+    since = max(previous.sampled_at, current.started_at)
+    if since >= current.sampled_at:
+        return None
+    return gbps_of(current.bytes_sent - previous.bytes_sent, (current.sampled_at - since).total_seconds())
 
 
 def average_rate(progress: FlowProgress, now: datetime) -> float | None:

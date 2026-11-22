@@ -23,8 +23,15 @@ Part A, non-SciNet traffic → ``observed`` (p50 / p95), per directed link and f
                                 pessimistic case only until outage_repair_p95
     every value is clamped to [0, nominal]
 
-Part B, SciNet traffic → a forecast of SciNet's own future demand for planning / admission, kept apart
-from ``observed``. PLACEHOLDER: the scheduling agent's side (``SciNetDemandSource``) does not exist yet.
+Part B, SciNet traffic → the ledger's SciNet demand (``forecast_scinet_demand``), kept apart from
+``observed`` (it is our own traffic) and from ``own`` (it is not booked yet):
+
+    the scheduling agent (``SciNetDemandSource``) lists the transfers it expects to request, inferred from
+    the dependencies between workflow tasks; each is mapped onto its shortest candidate path at the rate
+    that fills its window, from its earliest start (paths are not chosen until it is really requested)
+    a slot where observed − own < the demand there → the transfers on it would not fit as things stand:
+    reported back to the scheduling agent, which may move the workflow
+    nothing deducts the demand yet; it is a hook for keeping headroom in planning and admission
 
 Entry points, both returning the slots holding our bookings that went from enough to not enough under
 the pessimistic value (``ForecastUpdate.short``):
@@ -41,7 +48,8 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 
 from ..context.context import AgentContext
-from ..models.schemas import FLOW_ALERTS, TelemetryAlert, Tick
+from ..models.schemas import FLOW_ALERTS, TelemetryAlert, Tick, TransferRequest
+from ..planning.placement import bytes_at
 from ..models.topology import Path, Topology
 from ..state.ledger import EPS_GBPS, CapacityLedger, Observation
 
@@ -207,6 +215,61 @@ def forecast_link(ctx: AgentContext, link: str, first: int, now: datetime) -> di
         out[(link, slot)] = Observation(p95 if up_p95 else 0.0, FORECAST, now, valid_until, up_p95,
                                         p50_gbps=p50 if up_p50 else 0.0)
     return out
+
+
+# ── part B: forecast of SciNet's own demand ───────────────────────────────
+
+@dataclass(frozen=True)
+class ExpectedTransfer:
+    """A transfer the scheduling agent expects to request, as the forecast places it."""
+
+    request: TransferRequest
+    path: Path
+    gbps: float
+    start: datetime
+    end: datetime
+
+
+@dataclass(frozen=True)
+class DemandForecast:
+    expected: list[ExpectedTransfer]
+    demand: dict[tuple[str, int], float]              # (directed link, slot) → Gbps, what the ledger now holds
+    would_not_fit: dict[str, list[tuple[str, datetime]]]  # transfer id → (link, slot start) where it does not fit
+
+
+def forecast_scinet_demand(ctx: AgentContext, now: datetime) -> DemandForecast | None:
+    """Ask the scheduling agent what it expects to request, place it on the ledger as SciNet demand, and
+    say which of it would not fit. None if no scheduling agent provides a demand forecast."""
+    if ctx.scinet_demand is None:
+        return None
+    ledger, step = ctx.ledger, ctx.cfg.rate_step_gbps
+    expected = []
+    for request in ctx.scinet_demand.future_demand(now, ledger.horizon_end):
+        start, latest = max(request.window.earliest_start, now), request.window.latest_finish
+        paths = ctx.topology.paths(request.src, request.dst, ctx.cfg.max_paths)
+        if not paths or start >= latest:
+            continue
+        seconds = (latest - start).total_seconds()
+        gbps = min(math.ceil(request.bytes * 8 / seconds / 1e9 / step - EPS_GBPS) * step,
+                   min(ctx.topology.links[link].capacity_gbps for link in paths[0]))
+        end = start + timedelta(seconds=math.ceil(request.bytes / bytes_at(gbps, 1)))
+        expected.append(ExpectedTransfer(request, paths[0], gbps, start, min(end, ledger.horizon_end)))
+    refresh(ctx, [(e.path, e.start, e.end) for e in expected], now)
+    demand: dict[tuple[str, int], float] = {}
+    cells: dict[str, list[tuple[str, int]]] = {}
+    for e in expected:
+        if e.start >= ledger.horizon_end:
+            continue
+        for slot in ledger.slots_covering(e.start, e.end):
+            for link in e.path:
+                demand[(link, slot)] = demand.get((link, slot), 0.0) + e.gbps
+                cells.setdefault(e.request.id, []).append((link, slot))
+    ledger.put_scinet_demand(demand)
+    short = {cell for cell, gbps in demand.items()
+             if ledger.observed(*cell).gbps - ledger.own(*cell) + EPS_GBPS < gbps}
+    would_not_fit = {transfer_id: [(link, ledger.slot_start(slot)) for link, slot in transfer_cells if (link, slot) in short]
+                     for transfer_id, transfer_cells in cells.items()}
+    return DemandForecast(expected, demand, {k: v for k, v in would_not_fit.items() if v})
 
 
 # ── helpers ───────────────────────────────────────────────────────────────
