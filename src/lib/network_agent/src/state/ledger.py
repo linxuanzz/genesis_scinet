@@ -1,9 +1,12 @@
 """Capacity ledger: per directed link × per time slot, available = observed − own (slide 23).
 
 - observed: capacity available when our own bookings are not counted (see schemas.LinkSample for the
-  semantics). Initialized to the topology's configured capacity, then overwritten with telemetry
-  samples by ``apply()``; every number carries its source, sample time and expiry
-  (slide 12: "every number carries its source").
+  semantics). Initialized to the topology's configured capacity, then overwritten: past and current
+  slots with telemetry samples by ``apply()``, future slots with the network forecast by ``put()``
+  (runtime/forecast.py). Every number carries its source, sample time and expiry (slide 12: "every
+  number carries its source"). A slot holds two values: ``gbps``, the pessimistic one (p95), which
+  planning, detection and the capacity checks here use; and ``p50_gbps``, the typical one, which only
+  the finish-time assessment reads to give a p50. A measurement has no spread: p50 = p95.
 - own: the sum of our own bookings. A booking is in one of two states: pending (held at reserve time)
   or confirmed (after commit). A pending booking counts towards own as soon as it is written, so the
   very next query sees it (slide 19).
@@ -46,11 +49,21 @@ class InsufficientCapacity(Exception):
 
 @dataclass(frozen=True)
 class Observation:
-    gbps: float
-    source: str           # "topology" | "sense" | "telemetry" | ...
-    at: datetime          # sample time
+    gbps: float            # capacity without us, pessimistic case (p95)
+    source: str            # "topology" | "forecast" | "telemetry" | "mock" | ...
+    at: datetime           # sample time
     valid_until: datetime  # expiry; the topology's initial values expire at origin, so they are refreshed before the first query
-    up: bool = True        # link state; a down link has gbps 0 (tells an outage from congestion, step 7)
+    up: bool = True        # link state in the pessimistic case; a down link has gbps 0 (tells an outage from congestion)
+    p50_gbps: float | None = None   # capacity without us, typical case; None: same as the pessimistic case
+
+    def capacity(self, quantile: "Quantile") -> float:
+        """Capacity without us in this case; 0 while the link is down in it."""
+        if quantile == "p50" and self.p50_gbps is not None:
+            return self.p50_gbps
+        return self.gbps if self.up else 0.0
+
+
+Quantile = Literal["p50", "p95"]
 
 
 @dataclass
@@ -126,6 +139,12 @@ class CapacityLedger:
     def is_stale(self, link_id: str, i: int, now: datetime) -> bool:
         return self.observed(link_id, i).valid_until <= now
 
+    def current_slot(self, now: datetime) -> int | None:
+        """The slot now falls in; None outside the ledger's range."""
+        if not self.origin <= now < self.horizon_end:
+            return None
+        return int((now - self.origin).total_seconds() // self.cfg.slot_seconds)
+
     def booking(self, booking_id: str) -> Booking:
         return self._bookings[booking_id]
 
@@ -150,6 +169,12 @@ class CapacityLedger:
                     per_slot[(s.link_id, i)] = obs
         with self._lock:
             for (link_id, i), obs in per_slot.items():
+                self._observed[link_id][i] = obs
+
+    def put(self, observations: dict[tuple[str, int], Observation]) -> None:
+        """Write observations slot by slot ((directed link, slot) → observation), as the forecast computes them."""
+        with self._lock:
+            for (link_id, i), obs in observations.items():
                 self._observed[link_id][i] = obs
 
     def pending(self, booking_id: str, path: Path, profile: list[RateSegment]) -> None:

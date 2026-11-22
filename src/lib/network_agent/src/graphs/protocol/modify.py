@@ -27,7 +27,7 @@ from langgraph.graph import END, START, StateGraph
 from langgraph.runtime import Runtime
 
 from ...adapters.sense import SenseError
-from ...adapters.telemetry import refresh_stale
+from ...runtime.forecast import refresh
 from ...context.context import AgentContext, Reservation, ReservedOffer
 from ...models.schemas import ErrorResponse, ModifyAck, ModifyRequest, ServiceIntent
 from ...planning.placement import Placement
@@ -89,7 +89,7 @@ def validate_modify(state: ModifyState, runtime: Runtime[AgentContext]) -> dict:
 def recheck_capacity(state: ModifyState, runtime: Runtime[AgentContext]) -> dict:
     """Refresh stale observations over the new time range, so that ledger_replace checks current numbers."""
     ctx, p = runtime.context, state["placement"]
-    return {"refreshed": refresh_stale(ctx.ledger, ctx.telemetry, [(p.path, p.start, p.end)], state["now"])}
+    return {"refreshed": refresh(ctx, [(p.path, p.start, p.end)], state["now"]).refreshed}
 
 
 def ledger_replace(state: ModifyState, runtime: Runtime[AgentContext]) -> dict:

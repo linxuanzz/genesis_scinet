@@ -1,10 +1,14 @@
-"""Graph B · Runtime Graph (step 7): after commit, find deviations from what we promised, judge them,
-repair locally where possible, and report to the scheduling agent.
+"""Graph B · Runtime Graph (step 7): after commit, keep the network forecast current, find deviations
+from what we promised, judge them, repair locally where possible, and report to the scheduling agent.
+Three modules: forecast (runtime/forecast.py) → detection (runtime/detection.py) → repair
+(runtime/assessment.py + repair.py).
 
     START(event) → deduplicate_event ─ duplicate ─► END
                      │ new alert / Tick
                      ▼
-                   classify_event ─ no deviation ─► remember_event → END
+                   update_forecast
+                     ▼
+                   detect_deviations ─ no deviation ─► remember_event → END
                      │ deviation
                      ▼
                    scan_path → ◇ triage ─ all finish (or retry deferred) ─► remember_event → END
@@ -16,13 +20,17 @@ repair locally where possible, and report to the scheduling agent.
                                execute_repair ─► report_deviation (repaired / unresolved) → remember_event → END
 
     deduplicate_event validate the event and discard recently processed identical alerts; always pass ticks
-    classify_event    R1: refresh what the event concerns, find the commitments that deviate and why
-                      (deviation.py)
+    update_forecast   a tick recomputes the expired forecast values; a link alert re-measures the link and
+                      recomputes its forecast at once; both note the booked slots that became short
+                      (forecast.py)
+    detect_deviations R1: the commitments and branches the event concerns: a tick, all of them with flow
+                      branch (slow / overrun) and link branch; a flow alert, that flow's slow check; a link
+                      alert, the commitments booked in the newly short slots, link branch (detection.py)
     scan_path         R2: add the commitments on hops found damaged that the event did not concern; for
-                      each, the remaining bytes, the rate expected from now on and p50 / p95 (forecast.py)
+                      each, the remaining bytes, the rate expected from now on and p50 / p95 (assessment.py)
     triage            R3: does the commitment still finish inside its reservation (repair.py, a policy)
     plan_local_repair which repairs to try, smallest change first; higher priority first (a policy)
-    execute_repair    extend / raise_rate / reroute / borrow, each rolled back on failure (repair.py,
+    execute_repair    extend / increase / reroute / borrow, each rolled back on failure (repair.py,
                       with graph A's operations)
     report_deviation  one DeviationReport per commitment repaired or unresolved, grouped by cause
     remember_event    cache the alert only after successful processing; failed runs remain retryable
@@ -47,8 +55,10 @@ from pydantic import ValidationError
 
 from ...context.context import AgentContext, AlertKey, RepairConditions
 from ...models.schemas import RUNTIME_EVENT, Cause, DeviationReport, RepairProposal, TelemetryAlert, Tick
-from ...runtime.deviation import Deviation, find_deviations_for_event, find_deviations_on_damaged_hops
-from ...runtime.forecast import Assessment, assess_all
+from ...runtime import detection, forecast
+from ...runtime.detection import Deviation, find_deviations_on_damaged_hops
+from ...runtime.forecast import ShortSlots
+from ...runtime.assessment import Assessment, assess_all
 from ...runtime.repair import (NOTHING_TO_TRY, RepairPlan, RepairResult, RulePolicy, RuntimePolicy, execute, plan_all,
                                forget_changed_commitments, report, triage_all, unresolved_result)
 
@@ -60,9 +70,11 @@ class RuntimeState(TypedDict, total=False):
     invalid_event: str                            # written by deduplicate_event when the event was malformed
     event_key: AlertKey | None
     duplicate_event: bool
-    checked: list[str]                            # written by classify_event, added to by scan_path: commitments seen
-    refreshed: list[str]                          # written by classify_event, added to by scan_path: links pulled
-    deviations: list[Deviation]                   # written by classify_event, added to by scan_path
+    short_slots: ShortSlots                       # written by update_forecast: booked (link, slot)s newly short
+    checked: list[str]                            # written by detect_deviations, added to by scan_path: commitments seen
+    refreshed: list[str]                          # written by update_forecast, added to by later nodes: links re-measured
+                                                  # or re-forecast
+    deviations: list[Deviation]                   # written by detect_deviations, added to by scan_path
     assessments: list[Assessment]                 # written by scan_path: one per deviation
     finishes_in_reservation: list[str]            # written by triage: nothing to do
     retry_deferred: list[str]                     # written by triage: unchanged failure, retry not yet due
@@ -98,12 +110,19 @@ def deduplicate_event(state: RuntimeState, runtime: Runtime[AgentContext]) -> di
     return out | {"parsed": event, "event_key": key, "duplicate_event": key in ctx.processed_alerts}
 
 
-def classify_event(state: RuntimeState, runtime: Runtime[AgentContext]) -> dict:
-    """R1: refresh what the event concerns and find the commitments that deviate, with their cause."""
+def update_forecast(state: RuntimeState, runtime: Runtime[AgentContext]) -> dict:
+    """Keep the ledger's forecast current for this event; note the booked slots that became short."""
+    updated = forecast.update_forecast(runtime.context, state["parsed"], state["now"])
+    return {"short_slots": updated.short, "refreshed": updated.refreshed}
+
+
+def detect_deviations(state: RuntimeState, runtime: Runtime[AgentContext]) -> dict:
+    """R1: find the commitments that deviate, with their cause, in the branches the event concerns."""
     forget_changed_commitments(runtime.context)
     runtime.context.repair_proposals.clear()
-    found = find_deviations_for_event(runtime.context, state["parsed"], state["now"])
-    return {"checked": found.checked, "refreshed": found.refreshed, "deviations": found.deviations}
+    found = detection.detect_deviations(runtime.context, state["parsed"], state["short_slots"], state["now"])
+    return {"checked": found.checked, "deviations": found.deviations,
+            "refreshed": sorted(set(state["refreshed"]) | set(found.refreshed))}
 
 
 def remember_event(state: RuntimeState, runtime: Runtime[AgentContext]) -> dict:
@@ -154,10 +173,10 @@ def report_deviation(state: RuntimeState, runtime: Runtime[AgentContext]) -> dic
 # ── edges ────────────────────────────────────────────────────────────────
 
 def after_deduplicate(state: RuntimeState) -> str:
-    return END if state["duplicate_event"] else "classify_event"
+    return END if state["duplicate_event"] else "update_forecast"
 
 
-def after_classify(state: RuntimeState) -> str:
+def after_detect(state: RuntimeState) -> str:
     return "scan_path" if state["deviations"] else "remember_event"
 
 
@@ -176,7 +195,8 @@ def build_runtime_graph(policy: RuntimePolicy | None = None):
     policy = policy or RulePolicy()
     g = StateGraph(RuntimeState, context_schema=AgentContext)
     g.add_node("deduplicate_event", deduplicate_event)
-    g.add_node("classify_event", classify_event)
+    g.add_node("update_forecast", update_forecast)
+    g.add_node("detect_deviations", detect_deviations)
     g.add_node("scan_path", scan_path)
     g.add_node("triage", partial(triage, policy=policy))
     g.add_node("plan_local_repair", partial(plan_local_repair, policy=policy))
@@ -184,8 +204,9 @@ def build_runtime_graph(policy: RuntimePolicy | None = None):
     g.add_node("report_deviation", report_deviation)
     g.add_node("remember_event", remember_event)
     g.add_edge(START, "deduplicate_event")
-    g.add_conditional_edges("deduplicate_event", after_deduplicate, ["classify_event", END])
-    g.add_conditional_edges("classify_event", after_classify, ["scan_path", "remember_event"])
+    g.add_conditional_edges("deduplicate_event", after_deduplicate, ["update_forecast", END])
+    g.add_edge("update_forecast", "detect_deviations")
+    g.add_conditional_edges("detect_deviations", after_detect, ["scan_path", "remember_event"])
     g.add_edge("scan_path", "triage")
     g.add_conditional_edges("triage", after_triage, ["plan_local_repair", "remember_event"])
     g.add_conditional_edges("plan_local_repair", after_plan, ["execute_repair", "report_deviation"])

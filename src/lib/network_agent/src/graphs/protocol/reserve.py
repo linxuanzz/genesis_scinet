@@ -30,7 +30,7 @@ from typing import TypedDict
 from langgraph.graph import END, START, StateGraph
 from langgraph.runtime import Runtime
 
-from ...adapters.telemetry import refresh_stale
+from ...runtime.forecast import refresh
 from ...context.context import AgentContext, QueriedOffer, Reservation, ReservedOffer
 from ...models.schemas import ErrorResponse, ReserveAck, ReserveRequest, ServiceIntent, ServiceState
 from ...planning.circuit import compile_intent, place_on_circuit
@@ -97,7 +97,7 @@ def recheck_capacity(state: ReserveState, runtime: Runtime[AgentContext]) -> dic
     check-then-write, which also covers offers in the group that share a link."""
     ctx = runtime.context
     spans = [(q.placement.path, q.placement.start, q.placement.end) for q in state["queried"].values()]
-    return {"refreshed": refresh_stale(ctx.ledger, ctx.telemetry, spans, state["now"])}
+    return {"refreshed": refresh(ctx, spans, state["now"]).refreshed}
 
 
 def place_on_circuit_node(state: ReserveState) -> dict:

@@ -16,7 +16,7 @@ from typing import TypedDict
 from langgraph.graph import END, START, StateGraph
 from langgraph.runtime import Runtime
 
-from ...adapters.telemetry import refresh_stale
+from ...runtime.forecast import refresh
 from ...context.context import AgentContext, QueriedOffer
 from ...models.schemas import ErrorResponse, Offer, QueryRequest, QueryResponse, RejectReason, TransferQuery
 from ...models.topology import Path
@@ -45,8 +45,8 @@ def validate_bundle(state: QueryState) -> dict:
 
 
 def refresh_if_stale(state: QueryState, runtime: Runtime[AgentContext]) -> dict:
-    """Find candidate paths for each transfer; for observations on those paths that are stale within the
-    window, pull fresh samples from telemetry once and write them into the ledger."""
+    """Find candidate paths for each transfer and make the ledger valid on them within the window:
+    telemetry for the current slot, the network forecast for the slots ahead (runtime/forecast.py)."""
     ctx, now = runtime.context, state["now"]
     paths: dict[str, list[Path]] = {}
     spans: list[tuple[Path, datetime, datetime]] = []
@@ -57,7 +57,7 @@ def refresh_if_stale(state: QueryState, runtime: Runtime[AgentContext]) -> dict:
             paths[tr.id] = []
         start = max(tr.window.earliest_start, now)
         spans += [(path, start, tr.window.latest_finish) for path in paths[tr.id]]
-    return {"paths": paths, "refreshed": refresh_stale(ctx.ledger, ctx.telemetry, spans, now)}
+    return {"paths": paths, "refreshed": refresh(ctx, spans, now).refreshed}
 
 
 def find_placements(state: QueryState, runtime: Runtime[AgentContext]) -> dict:

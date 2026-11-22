@@ -188,16 +188,17 @@ class RuntimeSession:
                 out = chunk
         print("  path: " + " → ".join(nodes))
         if out.get("duplicate_event"):
-            print("  duplicate alert: skipped before classification")
+            print("  duplicate alert: skipped before the forecast and detection")
         for d in out.get("deviations", []):
             p = d.progress
-            print(f"  deviation {d.commitment_id}: cause {d.cause}, links {[link.split(':')[0] for link in d.links]}, "
-                  f"sent {p.bytes_sent / 1e12:g} TB of {d.due_bytes / 1e12:g} TB due"
-                  f"{', behind' if d.behind else ''}{', overruns its reservation' if d.overrun else ''}")
+            branch = "flow: slow" if d.slow else "flow: overruns its reservation" if d.overrun else "link: damage ahead"
+            rate = f", recent rate {d.recent_gbps:g} Gbps" if d.recent_gbps is not None else ""
+            print(f"  deviation {d.commitment_id} ({branch}): cause {d.cause}, "
+                  f"links {[link.split(':')[0] for link in d.links]}, sent {p.bytes_sent / 1e12:g} TB{rate}")
         for a in out.get("assessments", []):
             kept = a.finish_if_kept[1].strftime("%H:%M:%S") if a.finish_if_kept else "never"
             cap = f", capped at the {a.cap_gbps:g} Gbps still seen" if a.cap_gbps is not None else ""
-            print(f"  forecast {a.commitment_id}: {a.remaining_bytes / 1e12:g} TB left; through by the reservation's "
+            print(f"  assessment {a.commitment_id}: {a.remaining_bytes / 1e12:g} TB left; through by the reservation's "
                   f"end: {'yes' if a.finishes_in_reservation else 'no'}; at its rate past its end: {kept} (deadline "
                   f"{a.deadline:%H:%M}){cap}")
         for cid in out.get("retry_deferred", []):

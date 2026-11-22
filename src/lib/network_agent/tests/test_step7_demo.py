@@ -1,12 +1,12 @@
 """Uses an explicit approve-first mock scheduler and a mock transfer controller.
 
 Step 7 demo: graph B in five scenarios, one per kind of deviation and one for priority. Each prints the
-network, the commitments, every run of graph B (the nodes it ran, the deviations, the forecast, the plan
+network, the commitments, every run of graph B (the nodes it ran, the deviations, the assessment, the plan
 and the DeviationReports) and when the simulated transfers actually finish.
 
     outage       L2 down 15 minutes                      → repaired by extend
     congestion   L2 congested, latest_finish tight       → repaired by reroute (make-before-break)
-    unlocated    the source slows down, then stalls       → repaired by extend, then updated unresolved forecasts
+    unlocated    the source slows down, then stalls       → repaired by extend, then updated unresolved assessments
     priority     TH congested and blocked by TL           → TH repaired by extend, TL lends
     decision     no repair can make latest_finish         → unresolved; the scheduling agent extends it (graph A)
 
@@ -97,8 +97,8 @@ def decision():
 def test_outage():
     _, runs, done = outage()
     assert reports(runs[0]) == [("cmt-1", "link_down", "repaired", "extend")]
-    # still behind, but finishes in its reservation
-    assert runs[1]["finishes_in_reservation"] == ["cmt-1"] and "reports" not in runs[1]
+    # at full rate again and the extended reservation carries the rest: no deviation at all
+    assert runs[1]["deviations"] == [] and "reports" not in runs[1]
     assert done["si-1"] == runs[0]["reports"]["link_down"][0].predicted_finish_p95
 
 

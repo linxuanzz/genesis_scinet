@@ -26,13 +26,21 @@ class NetAgentConfig(BaseModel):
     event_dedup_seconds: PositiveInt   # suppress identical successfully processed alerts for this long
     reroute_cooldown_seconds: PositiveInt  # minimum time between confirmed path switches of one commitment
     rate_step_gbps: PositiveFloat     # offer rates are rounded to this step (slide 7's 40 / 100 / 20 Gbps are all multiples of 10)
-    progress_lag_tolerance: Annotated[float, Field(ge=0, lt=1)]   # graph B: a transfer deviates once it lags the bytes
-                                      # due under its reservation by more than this fraction of them (step 7)
+    progress_lag_tolerance: Annotated[float, Field(ge=0, lt=1)]   # graph B: a transfer deviates once its throughput
+                                      # falls short of the reserved rate, or its remaining bytes exceed what the
+                                      # reservation can still carry, by more than this fraction (step 7)
+    forecast_validity_seconds: PositiveInt   # a forecast value is recomputed this long after it was computed
+    forecast_decay_seconds: PositiveFloat    # how fast the forecast moves from the current measurement to the
+                                      # statistical baseline: weight on the measurement = exp(-lead time / this)
+    outage_repair_p50_seconds: PositiveInt   # an unplanned outage is typically repaired this long after it began
+    outage_repair_p95_seconds: PositiveInt   # ... and in the bad case only after this long
 
     @model_validator(mode="after")
     def _whole_slots(self):
         if self.horizon_seconds % self.slot_seconds:
             raise ValueError("horizon_seconds must be a multiple of slot_seconds")
+        if self.outage_repair_p95_seconds < self.outage_repair_p50_seconds:
+            raise ValueError("outage_repair_p95_seconds must be at least outage_repair_p50_seconds")
         return self
 
 

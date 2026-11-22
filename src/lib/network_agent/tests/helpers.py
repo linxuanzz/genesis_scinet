@@ -2,6 +2,7 @@
 
 from datetime import datetime, timezone
 
+from ..src.adapters.forecast_inputs import MockForecastInputs
 from ..src.adapters.sense import MockSense
 from ..src.adapters.transfer_controller import MockTransferController
 from ..src.adapters.telemetry import MockFlows, MockTelemetry
@@ -24,7 +25,8 @@ UTC = timezone.utc
 
 CFG = {"slot_seconds": 900, "horizon_seconds": 86400, "reserve_ttl_seconds": 60, "query_ttl_seconds": 900,
        "max_paths": 3, "rate_step_gbps": 10, "progress_lag_tolerance": 0.05, "repair_retry_seconds": 900,
-       "event_dedup_seconds": 60, "reroute_cooldown_seconds": 300}
+       "event_dedup_seconds": 60, "reroute_cooldown_seconds": 300, "forecast_validity_seconds": 300,
+       "forecast_decay_seconds": 1800, "outage_repair_p50_seconds": 3600, "outage_repair_p95_seconds": 10800}
 
 
 def t(hh, mm=0, day=20):
@@ -89,7 +91,8 @@ def make_ctx(net):
     return AgentContext(cfg=cfg, topology=net.topology, ledger=CapacityLedger(net.topology, cfg, origin=t(9)),
                         telemetry=CountingTelemetry(net, validity_seconds=300),
                         sense=MockSense(net, vlan_range=(3001, 3010)), rate_model=IdealRateModel(),
-                        flows=MockFlows(net), repair_coordinator=ApproveFirstForTests(),
+                        flows=MockFlows(net), forecast_inputs=MockForecastInputs(net),
+                        repair_coordinator=ApproveFirstForTests(),
                         transfer_controller=MockTransferController(net))
 
 

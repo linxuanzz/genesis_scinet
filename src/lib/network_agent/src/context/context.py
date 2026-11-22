@@ -14,7 +14,9 @@ The three books form a chain, each entry pointing back to the previous one by id
 Two smaller books serve the expiry sweep (reclaim.py): ``orphans``, SENSE instances that a failed reserve
 could not cancel, and ``expired_queries``, so that a reserve against a dropped query is told it expired.
 ``answered`` caches successful replies so that graph A can answer a resent request (step 5b).
-``progress_seen`` keeps the last progress reading of each flow, from which graph B derives its recent
+``unplanned_outages`` records links found down outside the maintenance calendar, from which the network
+forecast (runtime/forecast.py) estimates how long they stay down. ``progress_seen`` keeps the last
+progress reading of each flow, from which graph B derives its recent
 rate (step 7); ``committed()`` lists what graph B watches. ``failed_repairs`` postpones identical repair
 attempts until conditions change or a retry is due. ``reported_unresolved`` independently suppresses
 duplicate reports to the scheduling agent.
@@ -28,7 +30,8 @@ from itertools import count
 from typing import Literal
 
 from ..adapters.sense import SenseAdapter
-from ..adapters.scheduling_agent import RepairCoordinator
+from ..adapters.forecast_inputs import ForecastInputs
+from ..adapters.scheduling_agent import RepairCoordinator, SciNetDemandSource
 from ..adapters.transfer_controller import TransferController
 from ..adapters.telemetry import FlowSource, TelemetrySource
 from ..models.config import NetAgentConfig
@@ -158,6 +161,8 @@ class AgentContext:
     sense: SenseAdapter
     rate_model: RateModel
     flows: FlowSource                                                 # transfer progress (step 7, provisional)
+    forecast_inputs: ForecastInputs                                   # calendar, registered reservations, baseline
+    scinet_demand: SciNetDemandSource | None = None                   # forecast part B; placeholder, unused yet
     repair_coordinator: RepairCoordinator | None = None
     transfer_controller: TransferController | None = None
     repair_proposals: list[RepairProposal] = field(default_factory=list)  # current invocation only
@@ -174,6 +179,8 @@ class AgentContext:
     failed_repairs: dict[str, FailedRepair] = field(default_factory=dict)
     reported_unresolved: dict[str, DeviationReport] = field(default_factory=dict)
     processed_alerts: dict[AlertKey, datetime] = field(default_factory=dict)  # successful alerts → cache expiry
+    unplanned_outages: dict[str, datetime] = field(default_factory=dict)  # directed link → when it went down
+                                                                      # (not in the calendar); read by the forecast
     _seq: dict[str, Iterator[int]] = field(init=False, repr=False, default_factory=lambda: defaultdict(lambda: count(1)))
 
     def new_id(self, prefix: str) -> str:

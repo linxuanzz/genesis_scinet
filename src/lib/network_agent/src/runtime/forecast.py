@@ -1,162 +1,251 @@
-"""What a deviating commitment can expect from now on (graph B's scan_path, step 7).
+"""Network forecast: what capacity non-SciNet traffic leaves us on each link, slot by slot, from now on.
 
-The rate a circuit is expected to get is read off the ledger, slot by slot, from now on:
+It keeps the ledger's ``observed`` filled and up to date; detection only reads it. Graph A reads the same
+ledger, so planning and runtime see one picture.
 
-    a hop is down                  0
-    a hop gives less than we book  the circuit's share of it, in proportion to its rate (as the network
-                                   shares a congested hop among our circuits); our other bookings count
-    otherwise                      the circuit's rate
+Who writes which slot:
 
-So damage still ahead (a planned outage, congestion telemetry expects to last) lowers the forecast, and
-damage that is over does not. An off-path cause is not in the ledger: when the deviation is unlocated
-and the transfer is still slow (its recent rate, or its average since it started if there is no earlier
-reading, is below its reserved rate by more than the tolerance), that rate caps the forecast. Slots are
-read whole (the ledger keeps the lowest value in a slot), so the forecast errs on the slow side.
+    past and current slot   telemetry's measurement, pulled when needed: expired, or a slot that still
+                            holds a forecast because time has moved on (the measurement replaces it)
+    future slots            this module (part A below)
 
-The forecast runs through ``RateModel.finish_at_expected_rates``, the calibration hook, to give p50 / p95.
+Part A, non-SciNet traffic → ``observed`` (p50 / p95), per directed link and future slot:
+
+    observed = nominal capacity − registered non-SciNet reservations − predicted unregistered traffic
+    predicted unregistered traffic = w × start + (1 − w) × baseline,  w = exp(−lead time / decay)
+        start      what the current measurement implies: nominal − registered now − measured observed
+        baseline   what is usual on this link at that time (p50 / p95, from ForecastInputs)
+      so a slot soon after now looks like now and a slot far ahead looks like usual, and the p50–p95
+      gap widens with lead time up to the baseline's own spread
+    planned outage (calendar)   down in both cases
+    unplanned outage (a link found down, or a link_down alert; ``ctx.unplanned_outages``)
+                                down in both cases until outage_repair_p50 after it began, down in the
+                                pessimistic case only until outage_repair_p95
+    every value is clamped to [0, nominal]
+
+Part B, SciNet traffic → a forecast of SciNet's own future demand for planning / admission, kept apart
+from ``observed``. PLACEHOLDER: the scheduling agent's side (``SciNetDemandSource``) does not exist yet.
+
+Entry points, both returning the slots holding our bookings that went from enough to not enough under
+the pessimistic value (``ForecastUpdate.short``):
+
+    refresh(ctx, spans, now)          before reading the ledger over some spans (graph A and graph B)
+    update_forecast(ctx, event, now)  graph B's first step: a tick recomputes the expired forecast values;
+                                      a link alert re-measures the link and recomputes its forecast right
+                                      away, without waiting for the affected slots to arrive
 """
 
+import math
+from collections.abc import Iterable
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 
-from ..adapters.telemetry import refresh_stale
-from ..context.context import AgentContext, Committed, ReservedOffer
-from ..models.topology import Path
-from ..planning.estimate import ExpectedRates
-from ..planning.placement import gbps_of
-from ..state.ledger import EPS_GBPS, CapacityLedger
-from .deviation import Deviation
+from ..context.context import AgentContext
+from ..models.schemas import FLOW_ALERTS, TelemetryAlert, Tick
+from ..models.topology import Path, Topology
+from ..state.ledger import EPS_GBPS, CapacityLedger, Observation
+
+FORECAST = "forecast"                             # Observation.source of the values written here
+ShortSlots = set[tuple[str, int]]                 # (directed link, slot)
 
 
 @dataclass(frozen=True)
-class Assessment:
-    """A deviation, judged: how many bytes are left, by when they must be through, and when they will be."""
-
-    deviation: Deviation
-    deadline: datetime                                # latest_finish, at most the ledger's horizon
-    cap_gbps: float | None                            # an off-path limit on the rate from now on; None: links only
-    finish: tuple[datetime, datetime] | None          # (p50, p95) under the reservation; None: not through by its end
-    finish_if_kept: tuple[datetime, datetime] | None  # ... were the circuit kept at its rate past its end
-
-    @property
-    def committed(self) -> Committed:
-        return self.deviation.committed
-
-    @property
-    def commitment_id(self) -> str:
-        return self.deviation.commitment_id
-
-    @property
-    def remaining_bytes(self) -> int:
-        return self.deviation.remaining_bytes
-
-    @property
-    def priority(self) -> int:
-        return self.committed.reserved_offer.request.priority
-
-    @property
-    def finishes_in_reservation(self) -> bool:
-        """The remaining bytes get through by the reservation's end (p95)."""
-        return self.finish is not None and self.finish[1] <= self.committed.reserved_offer.placement.end
+class ForecastUpdate:
+    short: ShortSlots                             # booked slots that went from enough to not enough (p95)
+    refreshed: list[str]                          # links re-measured or re-forecast
 
 
-def expected_gbps(ledger: CapacityLedger, path: Path, slot: int, gbps: float, booking_id: str | None) -> float:
-    """
-    - The rate a circuit of gbps along path is expected to get in this slot. 
-    - ``booking_id`` is the circuit's own booking: what it books in the slot now is replaced by gbps, so it is not counted twice. None for a
-    circuit not booked yet.
-    - Example: this flow wants 10 Gbps on path A→B→C.
-        Link A-B: 40 Gbps available, 30 Gbps booked by us in total. Not oversubscribed, so the flow keeps 10 Gbps.
-        Link B-C: 15 Gbps available, 20 Gbps booked by us in total. Oversubscribed, so the flow gets 15 × 10 / 20 = 7.5 Gbps.
-        The result is the minimum over the links: 7.5 Gbps.
-    """
-    booked_now = ledger.booking(booking_id).slot_gbps.get(slot, 0.0) if booking_id else 0.0
-    rate = gbps
-    for link in path:
-        observed = ledger.observed(link, slot)
-        if not observed.up:
-            return 0.0
-        ours = ledger.own(link, slot) - booked_now + gbps  # all we book on the hop, this circuit counted at gbps
-        if ours > observed.gbps + EPS_GBPS:
-            rate = min(rate, observed.gbps * gbps / ours)
-    return rate
+# ── entry points ──────────────────────────────────────────────────────────
+
+def refresh(ctx: AgentContext, spans: Iterable[tuple[Path, datetime, datetime]], now: datetime,
+            force: Iterable[str] = ()) -> ForecastUpdate:
+    """Make the ledger valid over each (path, start, end) before it is read: measure the past and current
+    slots that need it, recompute the forecast of links with an expired future slot. Links in ``force``
+    are re-measured and re-forecast even where still valid (an alert said they changed)."""
+    ledger, force = ctx.ledger, set(force)
+    to_measure: dict[str, set[int]] = {}
+    to_forecast: set[str] = set()
+    for path, start, end in spans:
+        start, end = max(start, ledger.origin), min(end, ledger.horizon_end)
+        if start >= end:
+            continue
+        for link in path:
+            for slot in ledger.slots_covering(start, end):
+                if ledger.slot_start(slot) > now:
+                    if link in force or ledger.is_stale(link, slot, now):
+                        to_forecast.add(link)
+                elif link in force or needs_measurement(ledger, link, slot, now):
+                    to_measure.setdefault(link, set()).add(slot)
+    short = measure(ctx, to_measure, now)
+    short |= forecast_links(ctx, to_forecast, now)
+    return ForecastUpdate(short, sorted(set(to_measure) | to_forecast))
 
 
-def expected_rates_on_circuit(ledger: CapacityLedger, path: Path, gbps: float, start: datetime, end: datetime,
-                              booking_id: str | None, cap: float | None) -> ExpectedRates:
-    """The (start, end, gbps) spans a circuit is expected to get over [start, end), within the ledger's
-    range."""
-    start, end = max(start, ledger.origin), min(end, ledger.horizon_end)
-    spans: ExpectedRates = []
-    if start >= end:
-        return spans
-    for slot in ledger.slots_covering(start, end):
-        span_start, span_end = max(start, ledger.slot_start(slot)), min(end, ledger.slot_start(slot + 1))
-        rate = expected_gbps(ledger, path, slot, gbps, booking_id)
-        if cap is not None:
-            rate = min(rate, cap)
-        
-        # same rate as the slot before: merge
-        if spans and spans[-1][1] == span_start and abs(spans[-1][2] - rate) <= EPS_GBPS:
-            spans[-1] = (spans[-1][0], span_end, rate)                 
+def update_forecast(ctx: AgentContext, event: Tick | TelemetryAlert, now: datetime) -> ForecastUpdate:
+    """Graph B's update_forecast. A tick: recompute every link with an expired future slot. A link alert:
+    note an outage starting or ending, re-measure the link now and recompute its forecast. A flow alert:
+    nothing (it is about one transfer, not a link)."""
+    ledger = ctx.ledger
+    if isinstance(event, Tick):
+        first = first_future_slot(ledger, now)
+        expired = {link for link in ctx.topology.links
+                   if any(ledger.is_stale(link, slot, now) for slot in range(first, ledger.n_slots))}
+        return ForecastUpdate(forecast_links(ctx, expired, now), sorted(expired))
+    if event.kind in FLOW_ALERTS:
+        return ForecastUpdate(set(), [])
+    links = alerted_links(ctx.topology, event.link_id)
+    for link in links:
+        if event.kind == "link_down" and not _planned_down(ctx, link, now):
+            ctx.unplanned_outages.setdefault(link, event.start)
+        elif event.kind == "link_up":
+            ctx.unplanned_outages.pop(link, None)
+    current = ledger.current_slot(now)
+    short = measure(ctx, {link: {current} for link in links}, now) if current is not None else set()
+    short |= forecast_links(ctx, links, now)
+    return ForecastUpdate(short, sorted(links))
+
+
+# ── measurement (past and current slots) ──────────────────────────────────
+
+def needs_measurement(ledger: CapacityLedger, link: str, slot: int, now: datetime) -> bool:
+    """A past or current slot needs a fresh measurement: expired, or still holding a forecast."""
+    observation = ledger.observed(link, slot)
+    return observation.valid_until <= now or observation.source == FORECAST
+
+
+def measure(ctx: AgentContext, slots: dict[str, set[int]], now: datetime) -> ShortSlots:
+    """Pull telemetry for these (link → past / current slots) and write it: the past slots in one call,
+    the current slot in another, from now on only (what it was earlier in the slot is over). Note links
+    found down outside the calendar, and links found up again."""
+    slots = {link: wanted for link, wanted in slots.items() if wanted}
+    if not slots:
+        return set()
+    ledger, current = ctx.ledger, ctx.ledger.current_slot(now)
+    first = min(min(wanted) for wanted in slots.values())
+    last = max(max(wanted) for wanted in slots.values())
+    cells = [(link, slot) for link in slots for slot in range(first, last + 1)]
+    before = {cell: enough(ledger, *cell) for cell in cells}
+    past = sorted(link for link, wanted in slots.items() if any(slot != current for slot in wanted))
+    if past:
+        past_last = max(slot for link in past for slot in slots[link] if slot != current)
+        ledger.apply(ctx.telemetry.link_samples(past, ledger.slot_start(first), ledger.slot_start(past_last + 1), now))
+    now_measured = sorted(link for link, wanted in slots.items() if current in wanted)
+    if now_measured:
+        ledger.apply(ctx.telemetry.link_samples(now_measured, now, ledger.slot_start(current + 1), now))
+    for link in now_measured:
+        if not ledger.observed(link, current).up:
+            if not _planned_down(ctx, link, now):
+                ctx.unplanned_outages.setdefault(link, now)
         else:
-            spans.append((span_start, span_end, rate))
-    return spans
+            ctx.unplanned_outages.pop(link, None)
+    return newly_short(ledger, cells, before)
 
 
-def expected_rates_under_reservation(ledger: CapacityLedger, reserved_offer: ReservedOffer, now: datetime,
-                                     cap: float | None, until: datetime | None = None) -> ExpectedRates:
-    """The spans expected from now under the reserved offer's booking; with ``until``, its last rate is
-    also kept from its end to until (as if the circuit were extended)."""
-    path, profile, booking_id = (reserved_offer.placement.path, reserved_offer.placement.rate_profile,
-                                 reserved_offer.booking_id)
-    spans: ExpectedRates = []
-    for seg in profile:
-        spans += expected_rates_on_circuit(ledger, path, seg.gbps, max(seg.start, now), seg.end, booking_id, cap)
-    if until is not None:
-        last = profile[-1]
-        spans += expected_rates_on_circuit(ledger, path, last.gbps, max(last.end, now), until, booking_id, cap)
-    return spans
+# ── part A: forecast of non-SciNet traffic (future slots) ─────────────────
+
+def forecast_links(ctx: AgentContext, links: Iterable[str], now: datetime) -> ShortSlots:
+    """Recompute every future slot of these links (each starting from a fresh measurement now)."""
+    links, ledger = sorted(set(links)), ctx.ledger
+    first = first_future_slot(ledger, now)
+    if not links or first >= ledger.n_slots:
+        return set()
+    current = ledger.current_slot(now)
+    short: ShortSlots = set()
+    if current is not None:
+        short |= measure(ctx, {link: {current} for link in links if needs_measurement(ledger, link, current, now)}, now)
+    observations: dict[tuple[str, int], Observation] = {}
+    for link in links:
+        observations |= forecast_link(ctx, link, first, now)
+    before = {cell: enough(ledger, *cell) for cell in observations}
+    ledger.put(observations)
+    return short | newly_short(ledger, list(observations), before)
 
 
-def off_path_cap(deviation: Deviation, now: datetime, tolerance: float) -> float | None:
-    """For an unlocated deviation, the rate the transfer still gets if that is below its reserved rate by
-    more than the tolerance; None otherwise (located, recovered, or no rate to go by)."""
-    progress = deviation.progress
-    if deviation.cause != "unlocated" or progress.started_at is None:
+def forecast_link(ctx: AgentContext, link: str, first: int, now: datetime) -> dict[tuple[str, int], Observation]:
+    """The forecast of one directed link for slots first … the horizon (see the module docstring)."""
+    cfg, ledger, inputs = ctx.cfg, ctx.ledger, ctx.forecast_inputs
+    nominal = ctx.topology.links[link].capacity_gbps
+    registered = inputs.registered_reservations(link, min(now, ledger.slot_start(first)), ledger.horizon_end)
+    planned = inputs.planned_outages(link, ledger.slot_start(first), ledger.horizon_end)
+
+    # the starting point: unregistered traffic the current measurement implies (None: no usable measurement)
+    start_load = None
+    current = ledger.current_slot(now)
+    if current is not None:
+        measured = ledger.observed(link, current)
+        if measured.up and measured.source != FORECAST:
+            registered_now = peak_gbps(registered, now, now + timedelta(microseconds=1))
+            start_load = _clamp(nominal - registered_now - measured.gbps, nominal)
+
+    down_since = ctx.unplanned_outages.get(link)
+    if down_since is not None:
+        down_both_until = max(down_since + timedelta(seconds=cfg.outage_repair_p50_seconds), now)
+        down_p95_until = max(down_since + timedelta(seconds=cfg.outage_repair_p95_seconds), now)
+    valid_until = now + timedelta(seconds=cfg.forecast_validity_seconds)
+
+    out = {}
+    for slot in range(first, ledger.n_slots):
+        start, end = ledger.slot_start(slot), ledger.slot_start(slot + 1)
+        booked_by_others = peak_gbps(registered, start, end)
+        usual_p50, usual_p95 = inputs.baseline(link, start, end)
+        if start_load is None:
+            load_p50, load_p95 = usual_p50, usual_p95
+        else:
+            weight = math.exp(-(start - now).total_seconds() / cfg.forecast_decay_seconds)
+            load_p50 = weight * start_load + (1 - weight) * usual_p50
+            load_p95 = weight * start_load + (1 - weight) * usual_p95
+        p50 = _clamp(nominal - booked_by_others - load_p50, nominal)
+        p95 = _clamp(nominal - booked_by_others - load_p95, nominal)
+        up_p50 = up_p95 = True
+        if any(a < end and start < b for a, b in planned):
+            up_p50 = up_p95 = False
+        elif down_since is not None:
+            if start < down_both_until:
+                up_p50 = up_p95 = False
+            elif start < down_p95_until:
+                up_p95 = False
+        out[(link, slot)] = Observation(p95 if up_p95 else 0.0, FORECAST, now, valid_until, up_p95,
+                                        p50_gbps=p50 if up_p50 else 0.0)
+    return out
+
+
+# ── helpers ───────────────────────────────────────────────────────────────
+
+def first_future_slot(ledger: CapacityLedger, now: datetime) -> int:
+    """The first slot that starts after now (the ledger's slot count if none does)."""
+    current = ledger.current_slot(now)
+    if current is not None:
+        return current + 1
+    return 0 if now < ledger.origin else ledger.n_slots
+
+
+def alerted_links(topology: Topology, link_id: str) -> list[str]:
+    """An alert may name a directed link or a physical one (then both directions)."""
+    return sorted(directed for directed, link in topology.links.items() if link_id in (directed, link.link_id))
+
+
+def enough(ledger: CapacityLedger, link: str, slot: int) -> bool | None:
+    """Whether the slot gives what we booked on the hop (pessimistic value); None if we booked nothing."""
+    own = ledger.own(link, slot)
+    if own <= EPS_GBPS:
         return None
-    seen_gbps = deviation.recent_gbps                  # since the previous reading
-    if seen_gbps is None and now > progress.started_at:  # first reading: the average since the start
-        seen_gbps = gbps_of(progress.bytes_sent, (now - progress.started_at).total_seconds())
-    reserved_gbps = deviation.committed.reserved_offer.placement.gbps
-    if seen_gbps is not None and seen_gbps < (1 - tolerance) * reserved_gbps:
-        return seen_gbps
-    return None
+    observation = ledger.observed(link, slot)
+    return observation.up and observation.gbps + EPS_GBPS >= own
 
 
-def assess(ctx: AgentContext, deviation: Deviation, now: datetime) -> Assessment:
-    reserved_offer, remaining = deviation.committed.reserved_offer, deviation.remaining_bytes
-    cap = off_path_cap(deviation, now, ctx.cfg.progress_lag_tolerance)
-    reserved = expected_rates_under_reservation(ctx.ledger, reserved_offer, now, cap)
-    extended = expected_rates_under_reservation(ctx.ledger, reserved_offer, now, cap, until=ctx.ledger.horizon_end)
-    finish = ctx.rate_model.finish_at_expected_rates(reserved, remaining)
-    kept = ctx.rate_model.finish_at_expected_rates(extended, remaining)
-    deadline = min(reserved_offer.request.window.latest_finish, ctx.ledger.horizon_end)
-    deadline = min(deadline, ctx.repair_deadlines.get(deviation.commitment_id, deadline))
-    return Assessment(deviation, deadline, cap, finish, kept)
+def newly_short(ledger: CapacityLedger, cells: list[tuple[str, int]], before: dict) -> ShortSlots:
+    return {cell for cell in cells if before[cell] is True and enough(ledger, *cell) is False}
 
 
-def finish_under(ctx: AgentContext, reserved_offer: ReservedOffer, nbytes: int, cap: float | None,
-                 now: datetime) -> tuple[datetime, datetime] | None:
-    """(p50, p95) of nbytes under the reserved offer's booking as it now stands."""
-    spans = expected_rates_under_reservation(ctx.ledger, reserved_offer, now, cap)
-    return ctx.rate_model.finish_at_expected_rates(spans, nbytes)
+def peak_gbps(usages: list[tuple[datetime, datetime, float]], start: datetime, end: datetime) -> float:
+    """The highest total rate the usages reach at any instant of [start, end)."""
+    instants = {start} | {a for a, _, _ in usages if start < a < end}
+    return max((sum(g for a, b, g in usages if a <= at < b) for at in instants), default=0.0)
 
 
-def assess_all(ctx: AgentContext, deviations: list[Deviation], now: datetime) -> tuple[list[Assessment], list[str]]:
-    """Refresh stale observations on each deviation's path up to its deadline (a repair may need the time
-    past the reservation's end), then assess each. Returns the assessments and the links refreshed."""
-    spans = [(deviation.committed.reserved_offer.placement.path, now,
-              deviation.committed.reserved_offer.request.window.latest_finish) for deviation in deviations]
-    refreshed = refresh_stale(ctx.ledger, ctx.telemetry, spans, now)
-    return [assess(ctx, deviation, now) for deviation in deviations], refreshed
+def _planned_down(ctx: AgentContext, link: str, now: datetime) -> bool:
+    return bool(ctx.forecast_inputs.planned_outages(link, now, now + timedelta(microseconds=1)))
+
+
+def _clamp(gbps: float, nominal: float) -> float:
+    return min(max(gbps, 0.0), nominal)

@@ -70,7 +70,7 @@ def test_extend_without_valid_approval_leaves_commitment_unchanged(extension, mo
     assert "scheduler" in out["repair_results"][0].tried[0]
 
 
-def test_rejection_continues_to_raise_rate_without_a_second_approval(extension):
+def test_rejection_continues_to_increase_without_a_second_approval(extension):
     net, ctx = extension
     net._background[L2].clear()  # Free capacity is now available on MAIN.
     original_end = ctx.commitments["cmt-1"].rate_profile[-1].end
@@ -78,7 +78,7 @@ def test_rejection_continues_to_raise_rate_without_a_second_approval(extension):
                                                                          latest_finish=original_end))
     out = runtime(ctx, TICK, t(10))
     report = out["reports"]["link_down"][0]
-    assert report.action == "raise_rate" and report.predicted_finish_p95 <= original_end
+    assert report.action == "increase" and report.predicted_finish_p95 <= original_end
     assert report.commitment.rate_profile[-1].end == original_end
     assert len(ctx.repair_coordinator.calls) == 1
 
@@ -101,7 +101,7 @@ def test_approval_revalidates_before_execution(extension, change):
     assert expected in out["repair_results"][0].tried[0]
 
 
-def test_raise_rate_must_keep_original_end_even_if_request_deadline_allows_more_time():
+def test_increase_must_keep_original_end_even_if_request_deadline_allows_more_time():
     net = make_net(50)
     ctx = make_ctx(net)
     si = book(ctx, "q1", tr("T", nbytes=18 * 10**12, window=(t(9), t(10, 10))), 2)
@@ -115,7 +115,7 @@ def test_raise_rate_must_keep_original_end_even_if_request_deadline_allows_more_
 
 class RateOnly(RulePolicy):
     def plan_local_repair(self, ctx, assessment, now):
-        return ["raise_rate"]
+        return ["increase"]
 
 
 def test_unknown_slowdown_does_not_gain_rate_merely_because_capacity_is_free(extension):

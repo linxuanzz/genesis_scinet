@@ -291,8 +291,8 @@ class LinkSample(Msg):
     computes available = observed − own from it; if a data source's number already has our own
     bookings deducted, that source's adapter must add them back, or they would be deducted twice.
 
-    Values for future time ranges are what the data source "currently believes" (e.g. reservations
-    others have registered), not a traffic forecast.
+    Telemetry is asked only about past and current slots (it measures). Future slots are written by the
+    network forecast (runtime/forecast.py), not from samples.
     """
 
     link_id: str                      # directed link id, e.g. "L2:esnet-chi>esnet-atl"
@@ -424,7 +424,7 @@ RUNTIME_EVENT: TypeAdapter[Tick | TelemetryAlert] = TypeAdapter(RuntimeEvent)
 # ── network agent → scheduling agent: runtime (step 7) ────────────────────
 
 Cause = Literal["link_down", "congestion", "late_start", "unlocated"]
-RepairAction = Literal["extend", "raise_rate", "reroute", "lend"]
+RepairAction = Literal["extend", "increase", "reroute", "lend"]
 
 
 class RepairChange(Msg):
@@ -451,7 +451,7 @@ class RepairProposal(Msg):
     proposal_id: str
     kind: Literal["extend", "borrow"]
     target_commitment_id: str
-    target_action: Literal["extend", "raise_rate"]
+    target_action: Literal["extend", "increase"]
     effective_at: AwareDatetime
     changes: list[RepairChange]
 
@@ -479,7 +479,7 @@ class DeviationReport(Msg):
 
         outcome = repaired     the commitment still holds after a local repair; ``commitment`` is the
                                updated one, ``action`` the repair: extend (same circuit, later end),
-                               raise_rate (same circuit, higher rate), reroute (a new circuit on another
+                               increase (same circuit, higher rate), reroute (a new circuit on another
                                path, so a new circuit_id and VLAN), or lend (this commitment gave slack to
                                the higher-priority ``lent_to`` and still finishes by its latest_finish)
         outcome = unresolved   no local repair keeps it; its resources are left as they are and the

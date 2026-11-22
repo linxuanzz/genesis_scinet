@@ -21,7 +21,7 @@ def ctx():
 
 def test_duplicate_stops_before_any_flow_or_telemetry_read(ctx, monkeypatch):
     first = runtime(ctx, alert(), t(10))
-    assert not first["duplicate_event"] and first["checked"] == ["cmt-1"]
+    assert not first["duplicate_event"] and L2 in first["refreshed"]      # the forecast re-measured L2
 
     def unexpected_read(*args, **kwargs):
         pytest.fail("duplicate must stop before external reads")
@@ -96,13 +96,14 @@ def test_failed_processing_does_not_poison_duplicate_cache(ctx, monkeypatch):
     assert runtime(ctx, alert(), t(10))["duplicate_event"]
 
 
-def test_successful_repair_is_cached_and_tick_still_reaches_triage(ctx):
+def test_successful_repair_is_cached_and_tick_still_checks(ctx):
     net = ctx.telemetry.network
     net.start_flow("si-1", t(9), 50 * 10**12)
-    net.add_outage("L2", t(9, 30), t(9, 45))
-    event = alert(kind="link_down", start=t(9, 30), end=t(9, 45))
+    net.add_outage("L2", t(10), t(10, 15), planned=False)
+    event = alert(kind="link_down", start=t(10), end=None)
     first = runtime(ctx, event, t(10))
-    assert first["reports"]["link_down"][0].action == "extend"
+    # unplanned: forecast down until 11:00 (p50) / 13:00 (p95), past the reservation's end: reroute
+    assert first["reports"]["link_down"][0].action == "reroute"
     assert runtime(ctx, event, t(10))["duplicate_event"]
     out = runtime(ctx, TICK, t(10))
-    assert not out["duplicate_event"] and out["finishes_in_reservation"] == ["cmt-1"]
+    assert not out["duplicate_event"] and out["checked"] == ["cmt-1"]      # a tick is never deduplicated

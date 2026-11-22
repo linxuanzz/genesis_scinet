@@ -4,12 +4,12 @@ from dataclasses import dataclass, replace
 from datetime import datetime
 from typing import Literal
 
-from ..adapters.telemetry import refresh_stale
 from ..context.context import AgentContext, Committed
 from ..models.schemas import RepairChange, RepairDecision, RepairProposal
 from ..planning.placement import Placement
 from ..state.ledger import InsufficientCapacity
-from .forecast import finish_under
+from .assessment import finish_under
+from .forecast import refresh
 
 
 @dataclass(frozen=True)
@@ -26,7 +26,7 @@ class Candidate:
 
 
 def check_modifications(ctx: AgentContext, modifications: tuple[Modification, ...], now: datetime) -> list[RepairChange]:
-    """Check the complete allocation on a private ledger, then forecast every affected transfer."""
+    """Check the complete allocation on a private ledger, then assess every affected transfer."""
     trial = replace(ctx, ledger=ctx.ledger.fork())
     for change in modifications:
         trial.ledger.replace(change.committed.reserved_offer.booking_id, change.placement.rate_profile, now)
@@ -51,7 +51,7 @@ def check_modifications(ctx: AgentContext, modifications: tuple[Modification, ..
 
 
 def candidate(ctx: AgentContext, kind: Literal["extend", "borrow"], target_id: str,
-              action: Literal["extend", "raise_rate"], modifications: tuple[Modification, ...],
+              action: Literal["extend", "increase"], modifications: tuple[Modification, ...],
               now: datetime) -> Candidate | None:
     try:
         details = check_modifications(ctx, modifications, now)
@@ -98,12 +98,12 @@ def approve(ctx: AgentContext, candidates: list[Candidate], now: datetime) -> tu
 
     # step3: check whether "the internet" can still handle the load
     spans =[(change.placement.path, now, change.placement.end) for change in chosen.modifications]
-    refresh_stale(ctx.ledger, ctx.telemetry, spans, now, force={link for path, _, _ in spans for link in path})
+    refresh(ctx, spans, now, force={link for path, _, _ in spans for link in path})
     try:
         checked = check_modifications(ctx, chosen.modifications, now)
     except (InsufficientCapacity, ValueError) as error:
         return None, f"approved plan is no longer feasible: {error}"
-    # A later forecast could break a downstream plan that the scheduler just approved.
+    # A later assessment could break a downstream plan that the scheduler just approved.
     if any(new.predicted_finish_after > old.predicted_finish_after
            for old, new in zip(chosen.proposal.changes, checked)):
         return None, "approved completion estimate is no longer achievable"

@@ -9,11 +9,18 @@ rule-based version, and build_runtime_graph takes another in its place.
              which repairs are worth trying, in order (smallest change first):
 
         extend      propose a later end within the request deadline; execute only after scheduler approval
-        raise_rate  use free capacity on the same path, preserving the existing completion promise
+        increase    use free capacity on the same path, preserving the existing completion promise
         reroute     preserve endpoints and completion promise; avoid damaged shared links, respect the
                     cooldown, prepare a new circuit, confirm the transfer switch, then release the old one
         borrow      propose complete reallocations on an isolated ledger; the scheduler selects one whole
                     plan, which is revalidated before any lender or target is changed
+
+             which ones fit which deviation (detection.py):
+                 slow, a hop down or squeezed now     extend, reroute (+ borrow if squeezed and shared)
+                 slow, path healthy (unlocated)       extend only: utilization, not capacity
+                 overrun, or damage ahead (link)      extend, increase, reroute (+ borrow unless down)
+             increase sends more before the damaged slots, so it needs them to be ahead; borrow needs a
+             lower-priority circuit of ours on a squeezed hop (on any hop of the path for an overrun)
 
 Unlocated slowdowns are not proof of a host bottleneck. They conservatively receive an extension
 proposal; autonomous rate/path changes require evidence that network resources can improve throughput.
@@ -31,18 +38,18 @@ from datetime import datetime, timedelta
 from typing import Literal, Protocol
 
 from ..adapters.sense import SenseError, cancel_instances
-from ..adapters.telemetry import refresh_stale
 from ..context.context import AgentContext, Committed, FailedRepair, RepairConditions, Reservation, ReservedOffer
 from ..models.schemas import Cause, Commitment, DeviationReport, RepairAction, TimeWindow, TransferRequest
 from ..planning.placement import Placement, bytes_at, search
 from ..shared.operations import modify_held, open_circuit, record_change
 from ..state.ledger import EPS_GBPS, InsufficientCapacity
-from .forecast import Assessment, expected_gbps, expected_rates_on_circuit, finish_under
+from .assessment import Assessment, expected_gbps, expected_rates_on_circuit, finish_under
+from .forecast import refresh
 from .negotiation import Modification, approve, candidate
 
 TriageVerdict = Literal["finishes_in_reservation", "retry_deferred", "repair"]
 NOTHING_TO_TRY = "no repair can get the remaining bytes through by the deadline"
-Step = Literal["extend", "raise_rate", "reroute", "borrow"]
+Step = Literal["extend", "increase", "reroute", "borrow"]
 
 
 @dataclass(frozen=True)
@@ -99,6 +106,7 @@ class RulePolicy:
     def plan_local_repair(self, ctx: AgentContext, assessment: Assessment, now: datetime) -> list[Step]:
         reserved_offer = assessment.committed.reserved_offer
         request = reserved_offer.request
+        deviation = assessment.deviation
         candidate_paths = ctx.topology.paths(request.src, request.dst, ctx.cfg.max_paths)
         best_gbps = max(_path_capacity(ctx, path) for path in candidate_paths)
         if assessment.cap_gbps is not None:
@@ -106,15 +114,17 @@ class RulePolicy:
         seconds_left = (assessment.deadline - now).total_seconds()
         if seconds_left <= 0 or bytes_at(best_gbps, seconds_left) < assessment.remaining_bytes:
             return []
-        if assessment.cap_gbps is not None:
+        if assessment.cap_gbps is not None:           # slow with a healthy path: low utilization, not capacity
             return ["extend"]
         steps: list[Step] = ["extend"]
         current_path = reserved_offer.placement.path
-        if reserved_offer.placement.gbps + ctx.cfg.rate_step_gbps <= _path_capacity(ctx, current_path) + EPS_GBPS:
-            steps.append("raise_rate")
+        damaged_now = deviation.slow and deviation.cause in ("link_down", "congestion")
+        if (not damaged_now                           # the damage is now: there is no "before" to send more in
+                and reserved_offer.placement.gbps + ctx.cfg.rate_step_gbps <= _path_capacity(ctx, current_path) + EPS_GBPS):
+            steps.append("increase")
         if any(path != current_path for path in candidate_paths):
             steps.append("reroute")
-        if (assessment.deviation.cause in ("link_down", "congestion")
+        if (deviation.cause != "link_down"            # a down hop gives every circuit 0: nothing to borrow
                 and _lenders(ctx, assessment, now, cannot_lend=set(ctx.reported_unresolved))):
             steps.append("borrow")
         return steps
@@ -150,7 +160,7 @@ def repair_conditions(ctx: AgentContext, assessment: Assessment, now: datetime) 
     spans = [(path, now, assessment.deadline) for path in paths]
     spans += [(lender.reserved_offer.placement.path, now, lender.reserved_offer.request.window.latest_finish)
               for lender in lenders]
-    refreshed = refresh_stale(ctx.ledger, ctx.telemetry, spans, now)
+    refreshed = refresh(ctx, spans, now).refreshed
     slots = set()
     for path, start, end in spans:
         start, end = max(start, ctx.ledger.origin), min(end, ctx.ledger.horizon_end)
@@ -355,7 +365,7 @@ def network_can_help(ctx: AgentContext, assessment: Assessment, now: datetime) -
     return seen is not None and seen >= offer.placement.gbps * (1 - ctx.cfg.progress_lag_tolerance) # 5% in test case
 
 
-def raise_rate(ctx: AgentContext, assessment: Assessment, now: datetime, cannot_lend: set[str]) -> StepAttempt:
+def increase(ctx: AgentContext, assessment: Assessment, now: datetime, cannot_lend: set[str]) -> StepAttempt:
     # step1: gate
     if not network_can_help(ctx, assessment, now):
         return [], "insufficient evidence that extra network capacity improves throughput"
@@ -388,7 +398,7 @@ def raise_rate(ctx: AgentContext, assessment: Assessment, now: datetime, cannot_
             break
         except SenseError as error: # SENSE refusing ends the step
             return [], str(error)
-        return _repaired_result(ctx, assessment, new_offer, commitment, "raise_rate", now)
+        return _repaired_result(ctx, assessment, new_offer, commitment, "increase", now)
     return [], failure
 
 
@@ -411,7 +421,7 @@ def reroute(ctx: AgentContext, assessment: Assessment, now: datetime, cannot_len
     damaged ={damage.link_id for damage in assessment.deviation.damage if damage.end > now}
     other_paths = [path for path in ctx.topology.paths(request.src, request.dst, ctx.cfg.max_paths)
                    if path != reserved_offer.placement.path and not damaged.intersection(path)]
-    refresh_stale(ctx.ledger, ctx.telemetry, [(path, now, deadline) for path in other_paths], now)
+    refresh(ctx, [(path, now, deadline) for path in other_paths], now)
 
     # step3: find placements on those paths that carry the remaining bytes in time, and take the earliest finish
     remaining_request =request.model_copy(update={
@@ -467,13 +477,15 @@ def _discard_circuit(ctx: AgentContext, offer: ReservedOffer, now: datetime) -> 
 
 
 def _lenders(ctx: AgentContext, assessment: Assessment, now: datetime, cannot_lend: set[str]) -> list[Committed]:
-    """Lower-priority commitments not in ``cannot_lend`` that share a hop with the assessed commitment's path
-    and are booked between now and its deadline, lowest priority first."""
-    our_links = set(assessment.committed.reserved_offer.placement.path)
+    """Lower-priority commitments not in ``cannot_lend`` booked between now and the assessed commitment's
+    deadline that share a hop with it, lowest priority first. Under congestion the hop must be a squeezed
+    one (several of our circuits share what it gives); otherwise any hop of its path."""
+    deviation = assessment.deviation
+    shared = set(deviation.links) if deviation.cause == "congestion" else set(assessment.committed.reserved_offer.placement.path)
     lenders = [lender for lender in ctx.committed()
                if lender.reserved_offer.request.priority < assessment.priority
                and lender.commitment.commitment_id not in cannot_lend
-               and our_links & set(lender.reserved_offer.placement.path)
+               and shared & set(lender.reserved_offer.placement.path)
                and lender.reserved_offer.placement.end > now
                and lender.reserved_offer.placement.start < assessment.deadline]
     return sorted(lenders, key=lambda lender: lender.reserved_offer.request.priority)
@@ -523,7 +535,7 @@ def borrow(ctx: AgentContext, assessment: Assessment, now: datetime, cannot_lend
                                                    assessment.deadline, assessment.cap_gbps, now)
                 if placement is None:
                     continue
-                action = "extend" if rate == target.placement.gbps else "raise_rate"
+                action = "extend" if rate == target.placement.gbps else "increase"
                 plan = candidate(ctx, "borrow", assessment.commitment_id, action,
                                  (*loans.values(), Modification(assessment.committed, placement, assessment.cap_gbps)), now)
                 if plan is not None:
@@ -554,7 +566,7 @@ def borrow(ctx: AgentContext, assessment: Assessment, now: datetime, cannot_lend
     return results, None
 
 
-REPAIR_STEPS = {"extend": extend, "raise_rate": raise_rate, "reroute": reroute, "borrow": borrow}
+REPAIR_STEPS = {"extend": extend, "increase": increase, "reroute": reroute, "borrow": borrow}
 
 
 # ── report ────────────────────────────────────────────────────────────────

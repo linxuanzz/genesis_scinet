@@ -421,7 +421,6 @@ Notes:
   - **Non-SciNet forecast (A):** will the reservations we already hold be damaged? It serves Detection.
   - **SciNet demand forecast (B):** which requests are likely to arrive next? It serves planning and admission, e.g. whether to keep headroom for an upcoming workflow. Its information comes from the scheduling agent's knowledge of workflow dependencies.
 - **What "the forecast moves toward the statistical baseline" means.** The further ahead a slot is, the less we trust the current measurement and the more we trust "what this link usually looks like at this time". Example: at 10:00 link L has only 30 Gbps left, while history says it usually has about 80 Gbps at this time of day. Fifteen minutes ahead, congestion rarely clears, so the best guess is close to 30. At the same time tomorrow, today's congestion says almost nothing, so the best guess is the usual 80. In between, the forecast moves from 30 toward 80:
-
   | Slot  | w   | Forecast (Gbps) |
   | ----- | --- | --------------- |
   | 10:15 | 0.9 | 35              |
@@ -431,3 +430,26 @@ Notes:
 
   How fast w decays (how far ahead a current change should matter) should be estimated from historical data.
 - **Available capacity is not computed by Forecast.** The ledger computes it when read; the current code already does `available = observed − own`. Forecast only writes `observed` (A) and, later, the SciNet demand forecast (B).
+
+---
+
+## 需要从 telemetry agent 拿到的信息
+
+| #   | 信息                                                                      | 用途                            | 现在的状态                                |
+| --- | ----------------------------------------------------------------------- | ----------------------------- | ------------------------------------ |
+| 1   | **链路当前测量值**：每条有方向链路的可用容量和 up/down                                       | 当前时段写入账本；也是预报的起点              | ⚠️ 已有，但有两处和我们的约定不符（见下文）              |
+| 2   | **链路历史流量序列**：按时间查询某条链路过去的流量                                             | 预报模块计算统计基线（我们自己扣掉 SciNet 的流量） | ⚠️ 数据已经存在 InfluxDB 里并长期保留，但没有对外的查询接口 |
+| 3   | **link 告警**（推送）：`link_down`、`link_up`、`link_capacity_below`             | 立即重算预报，提前处理未来的预约              | ❌ 没有                                 |
+| 4   | **flow 进度**：我们每条传输的开始时间和已发字节数                                           | flow 分支 a、b 的判断依据             | ❌ 没有                                 |
+| 5   | **flow 告警**（推送）：`flow_below_rate`（带测量速率）、`flow_stalled`、`flow_finished` | 触发 flow 分支 a                  | ❌ 没有                                 |
+
+**不需要**从 telemetry agent 拿的：停机日历（来自运维）、非 SciNet 的已登记预约（来自 SENSE）。
+
+第 1 项现有实现的两处不符：
+
+- **测量值包含了我们自己的流量。** 我们约定的 `observed` 是“不算我们时的可用容量”，他们的 README 也写了这一点还没解决。
+- `up` **固定为 true。** 他们还没有采集链路状态，所以链路断了也看不出来。
+
+还有一个待定的问题：第 4、5 项里 `flow_id` 怎么和我们的传输对应。现在我们暂时用 SENSE instance id。
+
+---

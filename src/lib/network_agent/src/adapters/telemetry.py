@@ -1,7 +1,9 @@
 """Telemetry interface: where the network agent pulls link capacity and state from (slide 10).
 
 The network agent depends only on the ``TelemetrySource`` interface; whether a mock, the Telemetry
-Agent or SENSE / Prometheus sits behind it is transparent to the agent.
+Agent or SENSE / Prometheus sits behind it is transparent to the agent. Telemetry measures: it is
+asked only about past and current slots. Future slots come from the network forecast
+(runtime/forecast.py), which also decides when to pull (``forecast.refresh``).
 
 Step 7 adds, for the runtime graph, two PROVISIONAL pieces not yet agreed with the Telemetry Agent:
 ``FlowSource.progress`` (how far one of our transfers has got) and the alerts of ``schemas.TelemetryAlert``.
@@ -15,16 +17,15 @@ from itertools import count
 from typing import Protocol
 
 from ..models.schemas import FlowProgress, LinkSample, Subscribe, TelemetryAlert
-from ..models.topology import Path
 from ..planning.placement import gbps_of
 from ..sim.sim import MockNetwork
-from ..state.ledger import CapacityLedger
 
 
 class TelemetrySource(Protocol):
     def link_samples(self, link_ids: list[str], start: datetime, end: datetime,
                      now: datetime) -> list[LinkSample]:
-        """Return samples for these directed links over [start, end); see ``schemas.LinkSample`` for the semantics."""
+        """Return measured samples for these directed links over [start, end), a range that ends at the latest
+        with the current slot; see ``schemas.LinkSample`` for the semantics."""
         ...
 
 
@@ -44,30 +45,6 @@ class MockTelemetry:
             for link in link_ids
             for a, b, up, gbps in self.network.segments(link, start, end)
         ]
-
-
-def refresh_stale(ledger: CapacityLedger, source: TelemetrySource,
-                  spans: Iterable[tuple[Path, datetime, datetime]], now: datetime,
-                  force: Iterable[str] = ()) -> list[str]:
-    """For each (path, start, end), find the ledger slots on the path whose observations are stale at now,
-    pull fresh samples for all of them from the source in one call, and write them into the ledger.
-    Links in ``force`` are pulled over their spans even where still valid (an alert said they changed).
-    Returns the links that were refreshed."""
-    force = set(force)
-    stale: dict[str, set[int]] = {}               # directed link → stale slot indices
-    for path, start, end in spans:
-        start, end = max(start, ledger.origin), min(end, ledger.horizon_end)
-        if start >= end:
-            continue
-        for link in path:
-            for i in ledger.slots_covering(start, end):
-                if link in force or ledger.is_stale(link, i, now):
-                    stale.setdefault(link, set()).add(i)
-    if stale:
-        first = min(min(slots) for slots in stale.values())
-        last = max(max(slots) for slots in stale.values())
-        ledger.apply(source.link_samples(sorted(stale), ledger.slot_start(first), ledger.slot_start(last + 1), now))
-    return sorted(stale)
 
 
 # ── flows and alerts (step 7, PROVISIONAL) ────────────────────────────────

@@ -5,6 +5,10 @@ It holds the "ground truth": the topology, capacity used by others (per time ran
 reads from it and the mock SENSE (step 3b) reads and writes it, so both see the same network.
 This is the layer that gets replaced when we move to Mininet.
 
+Background (non-SciNet) traffic and outages are either known in advance (registered reservations,
+planned outages: the forecast inputs read them) or not (unregistered traffic, unplanned outages: only
+telemetry sees them, once they happen).
+
 "Background traffic" and "our reservations" are stored separately: SENSE admission control has to count
 both, while telemetry reports only background traffic (see schemas.LinkSample for the semantics); our
 own reservations are accounted for by the ledger's ``own``.
@@ -30,6 +34,9 @@ class Interval:
     start: datetime
     end: datetime
     gbps: float = 0.0
+    known_in_advance: bool = True                   # background: a registered reservation; outage: a planned one.
+                                                    # Only these reach the forecast inputs; the rest shows up in
+                                                    # telemetry only once it happens
 
 
 @dataclass(frozen=True)
@@ -84,17 +91,30 @@ class MockNetwork:
         self._background = {link: [] for link in self.topology.links}
         self._outages = {link: [] for link in self.topology.links}
 
-    def add_background(self, link_id: str, start: datetime, end: datetime, gbps: float) -> None:
-        """Others use gbps of capacity in one direction over [start, end)."""
-        self._background[link_id].append(Interval(start, end, gbps))
+    def add_background(self, link_id: str, start: datetime, end: datetime, gbps: float,
+                       registered: bool = True) -> None:
+        """Non-SciNet traffic uses gbps of capacity in one direction over [start, end). ``registered``: it is a
+        reservation others registered (e.g. in SENSE), so the forecast knows it in advance; otherwise it is
+        unregistered traffic, seen only through telemetry once it happens."""
+        self._background[link_id].append(Interval(start, end, gbps, known_in_advance=registered))
 
-    def add_outage(self, physical_link_id: str, start: datetime, end: datetime) -> None:
-        """A physical link goes down (e.g. a fiber cut): both directions are unavailable at once."""
+    def add_outage(self, physical_link_id: str, start: datetime, end: datetime, planned: bool = True) -> None:
+        """A physical link goes down: both directions are unavailable at once. ``planned``: it is in the
+        maintenance calendar, so the forecast knows it in advance; otherwise (e.g. a fiber cut) it is seen
+        only through telemetry and alerts once it happens."""
         directed = [d.id for d in self.topology.links.values() if d.link_id == physical_link_id]
         if not directed:
             raise KeyError(f"unknown link {physical_link_id!r}")
         for link in directed:
-            self._outages[link].append(Interval(start, end))
+            self._outages[link].append(Interval(start, end, known_in_advance=planned))
+
+    def known_background(self, link_id: str) -> list[Interval]:
+        """The registered non-SciNet reservations on this directed link."""
+        return [iv for iv in self._background[link_id] if iv.known_in_advance]
+
+    def planned_outages(self, link_id: str) -> list[Interval]:
+        """The planned outages of this directed link."""
+        return [iv for iv in self._outages[link_id] if iv.known_in_advance]
 
     def add_ours(self, instance_id: str, path: Path, start: datetime, end: datetime, gbps: float,
                  at: datetime | None = None) -> None:

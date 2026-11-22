@@ -1,4 +1,4 @@
-"""Step 7 C: graph B's local repairs (extend, raise_rate, reroute, borrow), their rollback, priority, and
+"""Step 7 C: graph B's local repairs (extend, increase, reroute, borrow), their rollback, priority, and
 the shared operations and mock behaviour they rest on.
 
 Unless a test says otherwise, the agent has committed cmt-1 = q1/T1/1 on si-1: 09:00–11:46:40 @ 40 Gbps
@@ -76,7 +76,7 @@ def test_extend_for_a_late_start(net):
 
 
 def test_extend_for_an_unlocated_slowdown(net, ctx):
-    """The forecast keeps the 24 Gbps seen, so the reservation runs at 40 until 39.2 TB are through at 24."""
+    """The assessment keeps the 24 Gbps seen, so the reservation runs at 40 until 39.2 TB are through at 24."""
     net.add_slowdown("si-1", t(9), t(15), 0.6)
     r = one_report(runtime(ctx, TICK, t(10)))
     p95 = t(10) + sec(39.2 * TB * 8 / 24e9)
@@ -94,9 +94,9 @@ def test_extend_across_damage_already_held(net, ctx):
     assert own(ctx, L2, 10) == 40 and finished(net, "si-1") == t(12, 16) + sec(40)
 
 
-# ── raise_rate ────────────────────────────────────────────────────────────
+# ── increase ────────────────────────────────────────────────────────────
 
-def test_raise_rate_when_extending_is_too_late():
+def test_increase_when_extending_is_too_late():
     """T has an approved reservation until 10:10. After an outage, 50 Gbps recovers the loss by 10:08
     using free capacity, without moving the approved end or changing another commitment."""
     net = make_net(50)
@@ -109,7 +109,7 @@ def test_raise_rate_when_extending_is_too_late():
     out = runtime(ctx, TICK, t(9, 40))
     r = one_report(out)
     seg = r.commitment.rate_profile[0]
-    assert (r.action, seg.start, seg.end, seg.gbps) == ("raise_rate", t(9), t(10, 10), 50)
+    assert (r.action, seg.start, seg.end, seg.gbps) == ("increase", t(9), t(10, 10), 50)
     assert own(ctx, L2, 9) == 40 and own(ctx, L2, 9, 45) == 50                 # the slots over keep their 40
     assert finished(net, si) == t(10, 8)
     assert net.flow_trace(si, t(9, 40)).sent == 7.5 * TB                     # the past is not rewritten
@@ -162,7 +162,7 @@ def test_a_failed_reroute_is_undone(tight, op):
     ctx.sense.fail_next(op)
     out = runtime(ctx, TICK, t(10))
     assert reports(out) == [("cmt-1", "congestion", "unresolved", None)]
-    assert [why.split(":")[0] for why in out["repair_results"][0].tried] == ["extend", "raise_rate", "reroute"]
+    assert [why.split(":")[0] for why in out["repair_results"][0].tried] == ["extend", "increase", "reroute"]
     assert own(ctx, L4, 10) == 0 and own(ctx, L2, 10) == 40 and ctx.orphans == {}
     assert [s.state for s in ctx.sense._states.values()] == ["committed"] + (["cancelled"] if op == "commit" else [])
 
@@ -173,7 +173,7 @@ def test_a_refused_extension_is_rolled_back_and_the_next_step_tried(net, ctx):
     ctx.sense.fail_next("modify")
     out = runtime(ctx, TICK, t(10))
     assert one_report(out).outcome == "unresolved"
-    assert [reason.split(":")[0] for reason in out["repair_results"][0].tried] == ["extend", "raise_rate", "reroute"]
+    assert [reason.split(":")[0] for reason in out["repair_results"][0].tried] == ["extend", "increase", "reroute"]
     assert own(ctx, L2, 12) == 0                                              # the extension did not stay
 
 
@@ -272,17 +272,17 @@ def test_plan_for_each_cause():
     assert plan_of(ctx, t(10)) == ["extend"]                           # off the path: only more time helps
 
     net = make_net()
-    assert plan_of(started(net, t(9, 20)), t(10)) == ["extend", "raise_rate", "reroute"]   # late: nobody lends
+    assert plan_of(started(net, t(9, 20)), t(10)) == ["extend", "increase", "reroute"]   # late: nobody lends
 
     net = make_net()
     ctx = started(net, t(9))
     net.add_outage("L2", t(9, 30), t(9, 45))
-    assert plan_of(ctx, t(10)) == ["extend", "raise_rate", "reroute"]   # no lower priority to borrow from
+    assert plan_of(ctx, t(10)) == ["extend", "increase", "reroute"]   # no lower priority to borrow from
 
 
 def test_plan_borrows_for_a_network_cause(two_priorities):
     _, ctx, *_ = two_priorities()
-    assert plan_of(ctx, t(9, 20)) == ["extend", "raise_rate", "reroute", "borrow"]
+    assert plan_of(ctx, t(9, 20)) == ["extend", "increase", "reroute", "borrow"]
 
 
 # ── what the repairs rest on ──────────────────────────────────────────────

@@ -9,6 +9,8 @@ from ..src.models.schemas import RateSegment, TelemetryAlert
 from .helpers import (ALT, CFG, L2, L2_BACK, L4, TICK, follow_reroutes, make_committed_ctx, make_net,
                       modify, release, reports, runtime, t)
 
+APS = "APS-LCRC:aps-beamline-8id>anl-n01"      # on no path of the test transfers
+
 TB = 10**12
 
 
@@ -24,9 +26,9 @@ def blocked():
     return net, ctx
 
 
-def first_failure(ctx):
+def first_failure(ctx, cause="link_down"):
     out = runtime(ctx, TICK, t(10))
-    assert reports(out) == [("cmt-1", "link_down", "unresolved", None)]
+    assert reports(out) == [("cmt-1", cause, "unresolved", None)]
     assert "reroute" in out["plans"][0].steps
     return ctx.failed_repairs["cmt-1"]
 
@@ -67,7 +69,7 @@ def test_new_timestamps_and_unrelated_bookings_do_not_trigger_retry(blocked):
     failed = first_failure(ctx)
     slot = ctx.ledger.slots_covering(t(10), t(10, 1))[0]
     before = ctx.ledger.observed(L4, slot).at
-    ctx.ledger.pending("reverse-direction", (L2_BACK,), [RateSegment(start=t(10), end=t(15), gbps=10)])
+    ctx.ledger.pending("elsewhere", (APS,), [RateSegment(start=t(10), end=t(15), gbps=10)])
     out = runtime(ctx, TICK, t(10, 5))
     assert ctx.ledger.observed(L4, slot).at > before
     assert out["retry_deferred"] == ["cmt-1"]
@@ -91,15 +93,17 @@ def test_timeout_retries_but_does_not_repeat_identical_report(blocked):
     assert runtime(ctx, TICK, t(10, 1) + timedelta(seconds=1))["retry_deferred"] == ["cmt-1"]
 
 
-def test_link_alert_and_tick_share_commitment_retry_history(blocked):
+def test_link_alert_that_changes_nothing_keeps_the_retry_history(blocked):
+    """A link_down alert about a link the forecast already had down makes no booked slot newly short:
+    the link is re-measured and re-forecast, nothing is re-checked, and the next tick still defers."""
     _, ctx = blocked
     failed = first_failure(ctx)
     alert = TelemetryAlert(alert_id="new-delivery", kind="link_down", link_id=L2,
                            start=t(9, 30), end=t(15), observed_at=t(10, 1), source="mock")
     out = runtime(ctx, alert, t(10, 1))
-    assert L2 in out["refreshed"]
-    assert out["retry_deferred"] == ["cmt-1"] and "repair_results" not in out
+    assert L2 in out["refreshed"] and out["short_slots"] == set() and out["checked"] == []
     assert ctx.failed_repairs["cmt-1"] == failed
+    assert runtime(ctx, TICK, t(10, 2))["retry_deferred"] == ["cmt-1"]
 
 
 def test_remaining_bytes_change_retries_before_timeout(blocked):
@@ -110,7 +114,7 @@ def test_remaining_bytes_change_retries_before_timeout(blocked):
     net.add_outage("L2", t(9, 30), t(10))
     net.add_background(L2, t(10), t(15), 35)
     net.add_background(L2, t(12), t(15), 60)
-    first = first_failure(ctx)
+    first = first_failure(ctx, "congestion")           # L2 leaves 5 of our 40 from 10:00
     out = runtime(ctx, TICK, t(10, 1))
     assert out["assessments"][0].remaining_bytes < first.conditions.remaining_bytes
     assert out["retry_deferred"] == [] and "repair_results" in out
@@ -145,7 +149,8 @@ def test_recovery_clears_history_then_a_new_outage_is_not_suppressed(blocked):
         net._outages[link].clear()
     recovered = TelemetryAlert(alert_id="up", kind="link_up", link_id=L2,
                                start=t(10, 1), observed_at=t(10, 1), source="mock")
-    assert not runtime(ctx, recovered, t(10, 1))["deviations"]
+    assert not runtime(ctx, recovered, t(10, 1))["deviations"]  # nothing newly short: nothing re-checked
+    assert not runtime(ctx, TICK, t(10, 1))["deviations"]       # the next full check clears the history
     assert not ctx.failed_repairs and not ctx.reported_unresolved
     net.add_outage("L2", t(9, 30), t(15))
     down = TelemetryAlert(alert_id="down-again", kind="link_down", link_id=L2,
