@@ -47,7 +47,7 @@
 - [x] **S5 复核**(`…_26a2997`):metrics 与报告逐字相同,结果确定。
 - [x] **S6 汇报**:已对照 H1–H3 汇报(2026-11-22)。
 - [x] **S7 分支:EDF 请求顺序**(用户 2026-11-22 要求继续推进到可做 demo):`exp_wftrace_1000genome_x2_edf`,与基线只差 `request_order: edf`。假设 H4:基线的超时来自请求顺序,EDF 下超时减少,巡检仍无偏离。跑两次确认。结果(`…_edf_bba2099`、`…_edf_1c09127`,两次 metrics 相同):超时 3 → 1(剩 WF-B 的 chr22 注释文件),巡检偏离 0,H4 成立;需求预报首次误差均值 154 s → 23 s。
-- [ ] **S8 demo 视图**:每次运行生成 `timeline.html`(站点、各 workflow 的传输与任务时间线、两段中转链路的占用、graph B 与需求预报);实验代码按 §6 提炼进 `src/lib/wftrace/experiment.py`,两个 tag 共用。基线用新代码重跑一次生成视图。
+- [x] **S8 demo 视图**:每次运行生成 `timeline.html`(站点、各 workflow 的传输与任务时间线、两段中转链路的占用、graph B 与需求预报);实验代码按 §6 提炼进 `src/lib/wftrace/experiment.py`,两个 tag 共用。基线用新代码重跑一次生成视图。最终用于演示的两个 run:基线 `runs/20261122_134604_exp_wftrace_1000genome_x2_355626c/timeline.html`,EDF `runs/20261122_134608_exp_wftrace_1000genome_x2_edf_c1064a8/timeline.html`(metrics 与此前同 config 的 run 逐字相同)。
 
 ## 待办与决策
 
@@ -56,10 +56,10 @@
 
 ## 当前状态
 
-Exp3 S0–S6 完成(H1 因 3 次超时不成立,H2/H3 成立);正在做 S7 EDF 分支与 S8 demo 视图。Exp2 暂停(S4 进行中),计划与流水账已归档。
+Exp3 S0–S8 完成,可作 demo:系统端到端承接两份放大的 1000genome(104 个任务全部完成,巡检零误报);基线 3 次超时,EDF 降到 1 次(H4 成立);需求预报在 09:00 就预见了 WF-B 的全部输入并预警放不下。停下等待用户决定下一步。
 
 ## 实验历史
 
 - **Exp1(已结题,2026-07-28—2026-08-26)**:AI 驱动科学实验、autonomous experimentation、self-driving laboratory、digital twin、实验选择、设备控制、科学工作流、AI agent 与相关系统平台的背景调研;不运行实验。归档见 [`20260826_probe_landscape_exp1.md`](archive/20260826_probe_landscape_exp1.md)。
 - **Exp2(暂停,2026-08-26—2026-11-22)**:调研 SENSE-O Intent API 2.0.4 对 virtual network link 条件的表达能力,并与本组 workflow/science-SLA 模型 harmonize;S0–S3 完成,S4 crosswalk 第一轮待审阅,无结论。归档见 [`20261122_probe_sense_intent_harmonize.md`](archive/20261122_probe_sense_intent_harmonize.md)。
-- **Exp3(进行中,始于 2026-11-22)**:真实 workflow trace(两份 1000genome)端到端接入 network agent,并落地 SciNet 需求预报;tag `exp_wftrace_1000genome_x2`。
+- **Exp3(进行中,始于 2026-11-22)**:真实 workflow trace(两份 1000genome)端到端接入 network agent,并落地 SciNet 需求预报;tag `exp_wftrace_1000genome_x2`(基线)与 `exp_wftrace_1000genome_x2_edf`(EDF 变体)。
