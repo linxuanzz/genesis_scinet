@@ -47,7 +47,7 @@ def test_cosim_books_large_transfers_and_runs_the_dag():
     runs = [WorkflowRun("WF-A", wf, placement, t(9), 1, 1.0, 10.0),
             WorkflowRun("WF-B", wf, placement, t(9, 30), 1, 1.0, 10.0)]
     settings = CosimSettings(step_seconds=10, tick_seconds=300, reserve_threshold_bytes=10**9, reference_gbps=20,
-                             best_effort_gbps=10, end=t(15))
+                             best_effort_gbps=10, end=t(15), request_order="as_listed")
     result = Cosimulation(ctx, net, runs, settings).run()
     booked = sorted((r for r in result.transfers if r.booked), key=lambda r: r.workflow_id)
     assert [(r.workflow_id, r.file) for r in booked] == [("WF-A", "big"), ("WF-B", "big")]
@@ -60,3 +60,22 @@ def test_cosim_books_large_transfers_and_runs_the_dag():
     b = booked[1]
     assert b.first_prediction is not None and abs((b.first_prediction - b.ready_at).total_seconds()) < 60
     assert reference_makespan(runs[0]) == timedelta(minutes=20)
+
+
+def test_timeline_page_is_written(tmp_path):
+    from src.lib.wftrace.timeline import write_timeline
+    net = make_net()
+    ctx = make_ctx(net)
+    wf, placement = tiny()
+    runs = [WorkflowRun("WF-A", wf, placement, t(9), 1, 1.0, 10.0)]
+    settings = CosimSettings(step_seconds=10, tick_seconds=300, reserve_threshold_bytes=10**9, reference_gbps=20,
+                             best_effort_gbps=10, end=t(15), request_order="edf")
+    result = Cosimulation(ctx, net, runs, settings).run()
+    config = {"tag": "test", "data_site": "ornl-n01", "program_sites": {"produce": "ornl-n01", "consume": "anl-n02"},
+              "cosim": {"request_order": "edf"},
+              "background": [{"link": "L2:esnet-atl>esnet-chi", "start": "09:00", "end": "12:00", "gbps": 60}]}
+    metrics = {"workflows": {"WF-A": {"makespan_min": 30}},
+               "demand_forecast": {"booked_transfers_predicted_before_request": 1, "would_not_fit_reports": 0}}
+    write_timeline(config, runs, result, metrics, tmp_path)
+    page = (tmp_path / "timeline.html").read_text()
+    assert "WF-A" in page and "L2 (main path)" in page and "<svg" in page

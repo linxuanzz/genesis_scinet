@@ -31,6 +31,7 @@ cosim:
   reserve_threshold_bytes: 1000000000                # >= 1 GB booked through graph A; smaller best effort
   reference_gbps: 20                                 # deadline = ready + bytes / this
   best_effort_gbps: 10
+  request_order: as_listed                           # transfers ready together: as_listed | edf
   end: "21:00"
 
 # ── simulated network (slide 3 + the esnet-nash detour) ──

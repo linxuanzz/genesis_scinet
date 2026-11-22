@@ -9,6 +9,7 @@ Time advances in fixed steps. At each step:
     4. new transfers are requested: a large one goes through graph A (query → pick the offer that finishes
        first → reserve → commit) and then runs on the simulated network from the offer's start; a small one
        goes best effort at a fixed rate, without the ledger
+       (ready at the same step: in the trace's order, or earliest deadline first, by ``request_order``)
     5. on every tick, graph B runs once (no events are injected), and the network agent's forecast part B
        asks this scheduling agent what it expects to request
 
@@ -41,6 +42,8 @@ class CosimSettings:
     reference_gbps: float                             # deadline = ready + bytes / this
     best_effort_gbps: float                           # rate of a transfer that is not booked
     end: datetime                                     # stop here even if something is unfinished
+    request_order: str                                # transfers ready at the same step: "as_listed" (the trace's
+                                                      # order) or "edf" (earliest deadline first)
 
 
 @dataclass
@@ -284,6 +287,10 @@ class Cosimulation:
             self._deliver(now)
             to_send += self._finish_tasks(now)
             self._start_tasks(now)
+            if settings.request_order == "edf":
+                to_send.sort(key=lambda pair: self.scheduler.deadline(now, pair[0].nbytes(pair[1].file)))
+            elif settings.request_order != "as_listed":
+                raise ValueError(f"unknown request_order {settings.request_order!r}")
             for run, transfer in to_send:
                 self._send(run, transfer, now)
             self._start_tasks(now)                    # a best-effort transfer may already be done
