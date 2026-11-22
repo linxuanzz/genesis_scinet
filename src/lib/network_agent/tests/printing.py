@@ -234,3 +234,117 @@ class RuntimeSession:
         print("  simulated: " + ", ".join(f"{i} finishes {f:%H:%M:%S}" if f else f"{i} does not finish"
                                          for i, f in out.items()))
         return out
+
+
+# ── runtime demo for presentations (step 7e): one line per stage of graph B ──
+
+def slot_ranges(ledger, slots):
+    """{(link, slot)} → {link: ['10:15–12:00', ...]} with adjacent slots merged."""
+    by_link = {}
+    for link, i in sorted(slots):
+        by_link.setdefault(link, []).append(i)
+    out = {}
+    for link, idx in by_link.items():
+        ranges, first, last = [], idx[0], idx[0]
+        for i in idx[1:]:
+            if i == last + 1:
+                last = i
+                continue
+            ranges.append((first, last))
+            first = last = i
+        ranges.append((first, last))
+        out[link] = [f"{ledger.slot_start(a):%H:%M}–{ledger.slot_start(b + 1):%H:%M}" for a, b in ranges]
+    return out
+
+
+def short_name(link):
+    """'L2:esnet-atl>esnet-chi' → 'L2'"""
+    return link.split(":")[0]
+
+
+class PipelineSession:
+    """Prints each run of graph B as the stages of the runtime: forecast → detection → assessment → repair → report."""
+
+    def __init__(self, title, story, net, ctx):
+        self.net, self.ctx, self.graph = net, ctx, build_runtime_graph()
+        print(f"\n{'=' * 100}\n{title}\n{'=' * 100}\n{story}")
+        self.print_commitments()
+
+    def print_commitments(self):
+        print("\n  Commitments held by the network agent:")
+        for c in self.ctx.committed():
+            seg, req = c.commitment.rate_profile[0], c.reserved_offer.request
+            print(f"    {c.commitment.commitment_id}  {req.id} ({req.workflow_id}, priority {req.priority}): "
+                  f"{req.bytes / 1e12:g} TB, deadline {req.window.latest_finish:%H:%M} | reserved "
+                  f"{seg.start:%H:%M}–{seg.end:%H:%M} @ {seg.gbps:g} Gbps on {c.commitment.circuit_id}  "
+                  f"[{hops(self.ctx.topology, c.reserved_offer.placement.path)}]")
+
+    def happens(self, text):
+        print(f"\n  ~ in the network: {text}")
+
+    def print_forecast(self, link, start, end, now, title=None):
+        """The ledger's view of one link: measured now, forecast ahead (typical / pessimistic)."""
+        ledger = self.ctx.ledger
+        print(f"    {title or 'ledger'} for {short_name(link)} at {now:%H:%M} "
+              "(capacity left by non-SciNet traffic, Gbps; typical p50 / pessimistic p95):")
+        rows = []
+        for i in ledger.slots_covering(start, end):
+            o = ledger.observed(link, i)
+            kind = "forecast" if o.source == "forecast" else "measured"
+            down_p50 = o.p50_gbps == 0 if o.p50_gbps is not None else not o.up
+            row = (kind, round(o.capacity("p50"), 1), round(o.capacity("p95"), 1), down_p50, not o.up)
+            a, b = ledger.slot_start(i), ledger.slot_start(i + 1)
+            if rows and rows[-1][2:] == row:
+                rows[-1] = (rows[-1][0], b, *row)
+            else:
+                rows.append((a, b, *row))
+        for a, b, kind, p50, p95, down_p50, down_p95 in rows:
+            state = ("DOWN" if down_p50 and down_p95 else
+                     f"{p50:>5g} / {p95:<5g}" + ("  (down in the bad case)" if down_p95 else ""))
+            print(f"      {a:%H:%M}–{b:%H:%M}  {kind:<8}  {state}")
+
+    def run(self, event, now, label):
+        print(f"\n  {now:%H:%M}  EVENT  {label}")
+        out = self.graph.invoke({"event": event, "now": now}, context=self.ctx)
+        ledger = self.ctx.ledger
+        short = slot_ranges(ledger, out.get("short_slots", set()))
+        if short:
+            text = "; ".join(f"{short_name(link)} {', '.join(r)}" for link, r in short.items())
+            print(f"    [forecast]   our booked slots that became short: {text}")
+        else:
+            print("    [forecast]   no booked slot became short")
+        deviations = out.get("deviations", [])
+        if not deviations:
+            print(f"    [detection]  checked {', '.join(out.get('checked', [])) or 'nothing'}: no deviation")
+        for d in deviations:
+            branch = ("flow / slow (throughput below the reserved rate)" if d.slow else
+                      "flow / overrun (cannot carry the rest in time)" if d.overrun else "link (damage ahead)")
+            where = f" at {', '.join(short_name(l) for l in d.links)}" if d.links else ""
+            print(f"    [detection]  {d.commitment_id}: {branch} → cause {d.cause}{where}")
+        for a in out.get("assessments", []):
+            finish = (f"through by p50 {a.finish[0]:%H:%M} / p95 {a.finish[1]:%H:%M}" if a.finish
+                      else "not through before its reservation ends")
+            verdict = "fine, no repair" if a.finishes_in_reservation else "needs a repair"
+            print(f"    [assess]     {a.commitment_id}: {a.remaining_bytes / 1e12:g} TB left, {finish} → {verdict}")
+        for cid in out.get("retry_deferred", []):
+            print(f"    [triage]     {cid}: same conditions as the failed attempt; retry later, no new report")
+        for p in out.get("plans", []):
+            print(f"    [plan]       {p.assessment.commitment_id}: try {' → '.join(p.steps)}")
+        for result in out.get("repair_results", []):
+            for why in result.tried:
+                print(f"    [repair]     {result.commitment.commitment_id}: {why}")
+        for rs in out.get("reports", {}).values():
+            for r in rs:
+                seg = r.commitment.rate_profile[0]
+                how = f"repaired by {r.action}" + (f" (lends to {r.lent_to})" if r.lent_to else "") if r.action else "UNRESOLVED"
+                p95 = f"p95 {r.predicted_finish_p95:%H:%M}" if r.predicted_finish_p95 else "p95 never"
+                print(f"    [report]     → scheduling agent: {r.commitment_id} [{r.cause}] {how}; {p95}, deadline "
+                      f"{r.latest_finish:%H:%M}; now {seg.start:%H:%M}–{seg.end:%H:%M} @ {seg.gbps:g} Gbps on "
+                      f"{r.commitment.circuit_id}")
+        return out
+
+    def finishes(self, *instance_ids):
+        out = {i: self.net.flow_trace(i, t(23)).finished_at for i in instance_ids}
+        print("\n  Outcome (simulated): " + ", ".join(f"{i} finishes {f:%H:%M}" if f else f"{i} does not finish"
+                                                    for i, f in out.items()))
+        return out

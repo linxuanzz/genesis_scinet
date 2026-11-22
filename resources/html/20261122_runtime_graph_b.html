@@ -1,0 +1,258 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Runtime Graph B</title>
+<style>
+:root {
+  --background: #ffffff; --foreground: #1d1d1f; --muted-foreground: #6b6b70; --border: #d4d4d8;
+  --page: #ffffff;
+  --viz-series-1: #2f6fde; --viz-series-2: #e8590c; --viz-series-3: #16a34a; --viz-series-4: #dc2626;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --background: #1e1e20; --foreground: #ececef; --muted-foreground: #9a9aa2; --border: #45454c; --page: #181818;
+    --viz-series-1: #6ea2ff; --viz-series-2: #ff9a5a; --viz-series-3: #4ade80; --viz-series-4: #f87171;
+  }
+}
+:root[data-theme="dark"] {
+  --background: #1e1e20; --foreground: #ececef; --muted-foreground: #9a9aa2; --border: #45454c; --page: #181818;
+  --viz-series-1: #6ea2ff; --viz-series-2: #ff9a5a; --viz-series-3: #4ade80; --viz-series-4: #f87171;
+}
+body { margin: 0; padding: 16px; background: var(--page); color: var(--foreground);
+  font: 15px/1.45 -apple-system, "Helvetica Neue", "Segoe UI", sans-serif; }
+code { font: 14px ui-monospace, Menlo, monospace; }
+.text-small { font-size: 13px; }
+.muted { color: var(--muted-foreground); }
+#graph-b { max-width: 1100px; margin: 0 auto; }
+.na-header { display: flex; align-items: start; justify-content: space-between; flex-wrap: wrap; gap: 12px; margin-bottom: 18px; }
+.na-header h2 { margin: 0; font-size: 20px; }
+.na-controls { margin-bottom: 24px; }
+.form-label { display: block; font-size: 15px; }
+.form-select { display: block; width: 100%; margin-top: 8px; padding: 8px 12px; font: inherit; font-size: 14px;
+  color: var(--foreground); background: var(--background); border: 1px solid var(--border); border-radius: 8px; }
+.na-flow { position: relative; }
+.na-layout { position: relative; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-areas: '. start .' '. dedup dupend' '. forecast .' '. detect noend' '. scan .' '. triage fine'
+                       '. plan .' '. execute .' 'repaired . risk' '. reports .' '. end .';
+  gap: 44px 24px; align-items: center; justify-items: center; padding: 4px 16px; }
+.na-node { position: relative; z-index: 1; width: 100%; box-sizing: border-box; padding: 10px 12px; text-align: center;
+  border: 1px solid var(--border); border-radius: 8px; background: var(--background); }
+.na-node-inner { position: absolute; inset: 0; border-radius: inherit; z-index: -1;
+  background: color-mix(in srgb, var(--viz-series-1) 7%, transparent); }
+.na-node code { display: block; }
+.na-module { display: block; margin-top: 2px; }
+.na-label { display: block; margin-top: 4px; }
+.na-detail { display: block; margin-top: 4px; text-align: left; }
+.na-detail span { display: block; }
+.na-terminal { border-radius: 24px; width: max-content; max-width: 100%; padding: 6px 20px; }
+.na-policy { border-style: dashed; }
+.na-policy .na-node-inner { background: color-mix(in srgb, var(--viz-series-2) 7%, transparent); }
+.na-success .na-node-inner { background: color-mix(in srgb, var(--viz-series-3) 9%, transparent); }
+.na-risk .na-node-inner { background: color-mix(in srgb, var(--viz-series-4) 8%, transparent); }
+.na-forecast .na-node-inner { background: color-mix(in srgb, var(--viz-series-1) 13%, transparent); }
+.na-connectors { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; pointer-events: none; }
+.na-connectors path { stroke: var(--muted-foreground); fill: none; stroke-width: 1.4; }
+.na-connectors text { fill: var(--foreground); font-size: 12px; paint-order: stroke; stroke: var(--page); stroke-width: 5px; stroke-linejoin: round; }
+.na-legend { margin-top: 22px; display: flex; gap: 8px 20px; flex-wrap: wrap; }
+.na-legend-mark { display: inline-block; width: 18px; height: 12px; border: 1px dashed var(--border); border-radius: 3px; vertical-align: middle; margin-right: 6px; }
+[hidden] { display: none !important; }
+[data-view="single"] .na-layout { display: flex; flex-direction: column; gap: 40px; max-width: 440px; margin: 0 auto; }
+@media (max-width: 620px) {
+  .na-layout { grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-areas: 'start start' 'dedup dupend' 'forecast forecast' 'detect noend' 'scan scan' 'triage fine'
+                         'plan plan' 'execute execute' 'repaired risk' 'reports reports' 'end end'; gap: 44px 14px; }
+}
+</style>
+</head>
+<body>
+<section id="graph-b" aria-label="Runtime graph B: forecast, detection, repair">
+  <div class="na-header">
+    <h2>Graph B · Runtime</h2>
+    <span class="text-small muted">graphs/runtime/runtime.py · 2026-11-22 · forecast → detection → repair</span>
+  </div>
+  <div class="na-controls">
+    <label class="form-label" for="scenario">Select an execution path
+      <select class="form-select" id="scenario">
+        <option value="all">All branches</option>
+        <option value="duplicate">Repeated alert → End</option>
+        <option value="normal">No deviation → End</option>
+        <option value="fine">Still on time, or retry not due → End</option>
+        <option value="repaired">A repair succeeds → repaired</option>
+        <option value="failed">Every repair fails → unresolved</option>
+        <option value="none">Nothing worth trying → unresolved</option>
+      </select>
+    </label>
+  </div>
+  <div class="na-flow" id="flow">
+    <svg class="na-connectors" id="edges" aria-hidden="true"></svg>
+    <div class="na-layout">
+      <div class="na-node na-terminal" id="n-start" style="grid-area:start">START · tick / flow alert / link alert</div>
+
+      <div class="na-node" id="n-dedup" style="grid-area:dedup"><i class="na-node-inner"></i>
+        <code>deduplicate_event</code><span class="na-label">Drop a repeated alert</span></div>
+      <div class="na-node na-terminal" id="n-dupend" style="grid-area:dupend">END · Repeated</div>
+
+      <div class="na-node na-forecast" id="n-forecast" style="grid-area:forecast"><i class="na-node-inner"></i>
+        <code>update_forecast</code><span class="na-module text-small muted">forecast.py</span>
+        <span class="na-label">Keep the ledger's future up to date</span>
+        <span class="na-detail text-small">
+          <span><b>tick</b> · recompute expired slots</span>
+          <span><b>link alert</b> · re-measure the link, recompute it now</span>
+          <span><b>flow alert</b> · nothing</span>
+          <span class="muted">→ booked slots that became short</span>
+        </span></div>
+
+      <div class="na-node" id="n-detect" style="grid-area:detect"><i class="na-node-inner"></i>
+        <code>detect_deviations</code><span class="na-module text-small muted">detection.py</span>
+        <span class="na-label">Which commitments deviate, and why</span>
+        <span class="na-detail text-small">
+          <span><b>tick</b> · all · slow, overrun, link</span>
+          <span><b>flow alert</b> · that flow · slow</span>
+          <span><b>link alert</b> · booked in the short slots · link</span>
+          <span class="muted">cause: link_down / congestion / late_start / unlocated</span>
+        </span></div>
+      <div class="na-node na-terminal" id="n-noend" style="grid-area:noend">END · No deviation</div>
+
+      <div class="na-node" id="n-scan" style="grid-area:scan"><i class="na-node-inner"></i>
+        <code>scan_path</code><span class="na-module text-small muted">detection.py · assessment.py</span>
+        <span class="na-label">Widen, then assess</span>
+        <span class="na-detail text-small">
+          <span>add commitments on the damaged hops</span>
+          <span>p50 / p95 finish of the remaining bytes</span>
+        </span></div>
+
+      <div class="na-node na-policy" id="n-triage" style="grid-area:triage"><i class="na-node-inner"></i>
+        <code>◇ triage</code><span class="na-module text-small muted">repair.py</span>
+        <span class="na-label">Will it be late?</span>
+        <span class="na-detail text-small">
+          <span>p95 within the reservation → fine</span>
+          <span>same failed conditions, retry not due → defer</span>
+        </span></div>
+      <div class="na-node na-terminal" id="n-fine" style="grid-area:fine">END · On time / deferred</div>
+
+      <div class="na-node na-policy" id="n-plan" style="grid-area:plan"><i class="na-node-inner"></i>
+        <code>◇ plan_local_repair</code><span class="na-module text-small muted">repair.py</span>
+        <span class="na-label">Which repairs fit</span>
+        <span class="na-detail text-small">
+          <span><b>slow, damaged now</b> · extend, reroute (+ borrow)</span>
+          <span><b>slow, path healthy</b> · extend only</span>
+          <span><b>overrun / link</b> · extend, increase, reroute (+ borrow)</span>
+          <span class="muted">borrow: never when a hop is down</span>
+        </span></div>
+
+      <div class="na-node" id="n-execute" style="grid-area:execute"><i class="na-node-inner"></i>
+        <code>execute_repair</code><span class="na-module text-small muted">repair.py · negotiation.py</span>
+        <span class="na-label">extend → increase → reroute → borrow</span>
+        <span class="na-detail text-small">
+          <span>a failure rolls back; the next one is tried</span>
+          <span class="muted">extend / borrow: the scheduling agent approves</span>
+        </span></div>
+
+      <div class="na-node na-success" id="n-repaired" style="grid-area:repaired"><i class="na-node-inner"></i>
+        <code>repaired</code><span class="na-label">The commitment still holds</span></div>
+      <div class="na-node na-risk" id="n-risk" style="grid-area:risk"><i class="na-node-inner"></i>
+        <code>unresolved</code><span class="na-label">The scheduling agent decides</span></div>
+
+      <div class="na-node" id="n-reports" style="grid-area:reports"><i class="na-node-inner"></i>
+        <code>report_deviation</code><span class="na-label">DeviationReport → scheduling agent</span>
+        <span class="na-detail text-small"><span class="muted">unresolved: sent again only when it changes</span></span></div>
+
+      <div class="na-node na-terminal" id="n-end" style="grid-area:end">END</div>
+    </div>
+  </div>
+  <div class="na-legend text-small muted">
+    <span><i class="na-legend-mark"></i>◇ policy (rule-based, replaceable)</span>
+    <span>slow = throughput below the reserved rate · overrun = the rest does not fit in the reservation · link = damage ahead</span>
+  </div>
+</section>
+<script>
+(() => {
+  const root = document.getElementById('graph-b');
+  const flow = document.getElementById('flow');
+  const svg = document.getElementById('edges');
+  const select = document.getElementById('scenario');
+  const ns = 'http://www.w3.org/2000/svg';
+  const main = ['start', 'dedup', 'forecast', 'detect'];
+  const paths = {
+    all: ['start','dedup','dupend','forecast','detect','noend','scan','triage','fine','plan','execute','repaired','risk','reports','end'],
+    duplicate: ['start','dedup','dupend'],
+    normal: [...main, 'noend'],
+    fine: [...main, 'scan', 'triage', 'fine'],
+    repaired: [...main, 'scan', 'triage', 'plan', 'execute', 'repaired', 'reports', 'end'],
+    failed: [...main, 'scan', 'triage', 'plan', 'execute', 'risk', 'reports', 'end'],
+    none: [...main, 'scan', 'triage', 'plan', 'risk', 'reports', 'end'],
+  };
+  const edges = [
+    ['start','dedup',''], ['dedup','dupend','Repeated'], ['dedup','forecast','New'],
+    ['forecast','detect',''], ['detect','noend','None'], ['detect','scan','Deviations'],
+    ['scan','triage',''], ['triage','fine','Fine'], ['triage','plan','Will be late'],
+    ['plan','execute','Candidates'], ['plan','risk','None worth trying'],
+    ['execute','repaired','One succeeded'], ['execute','risk','All failed'],
+    ['repaired','reports',''], ['risk','reports',''], ['reports','end',''],
+  ];
+  const el = (tag, attrs) => {
+    const node = document.createElementNS(ns, tag);
+    for (const [k, v] of Object.entries(attrs)) node.setAttribute(k, v);
+    return node;
+  };
+  function draw() {
+    const bounds = flow.getBoundingClientRect();
+    if (!bounds.width || !bounds.height) return;
+    svg.setAttribute('viewBox', `0 0 ${bounds.width} ${bounds.height}`);
+    svg.replaceChildren();
+    const defs = el('defs', {});
+    const marker = el('marker', {id: 'tip', viewBox: '0 0 10 10', refX: '9', refY: '5', markerWidth: '6', markerHeight: '6', orient: 'auto-start-reverse'});
+    marker.append(el('polygon', {points: '0,0 10,5 0,10', fill: 'var(--muted-foreground)'}));
+    defs.append(marker); svg.append(defs);
+    const boxes = {};
+    for (const key of paths.all) {
+      const node = document.getElementById(`n-${key}`);
+      if (node.hidden) continue;
+      const b = node.getBoundingClientRect();
+      boxes[key] = {left: b.left - bounds.left, right: b.right - bounds.left, top: b.top - bounds.top,
+                    bottom: b.bottom - bounds.top, cx: b.left - bounds.left + b.width / 2, cy: b.top - bounds.top + b.height / 2};
+    }
+    const view = root.dataset.view, active = paths[root.dataset.scenario];
+    for (const [from, to, label] of edges) {
+      const a = boxes[from], b = boxes[to];
+      if (!a || !b) continue;
+      if (view === 'single' && active.indexOf(to) !== active.indexOf(from) + 1) continue;
+      let d, lx, ly, anchor;
+      if (view === 'all' && from === 'plan' && to === 'risk') {
+        const rail = bounds.width - 5;
+        d = `M${a.right},${a.cy}H${rail}V${b.cy}H${b.right + 2}`;
+        lx = rail - 8; ly = a.cy - 8; anchor = 'end';
+      } else if (Math.abs(a.cy - b.cy) < 8) {
+        d = `M${a.right},${a.cy}H${b.left - 3}`;
+        lx = (a.right + b.left) / 2; ly = a.cy - 8; anchor = 'middle';
+      } else {
+        const middle = (a.bottom + b.top) / 2;
+        d = `M${a.cx},${a.bottom}V${middle}H${b.cx}V${b.top - 3}`;
+        const bends = Math.abs(a.cx - b.cx) > 30;
+        lx = bends ? (a.cx + b.cx) / 2 : a.cx + 10; ly = middle - 6; anchor = bends ? 'middle' : 'start';
+      }
+      svg.append(el('path', {d, 'marker-end': 'url(#tip)'}));
+      if (label) {
+        const text = el('text', {x: lx, y: ly, 'text-anchor': anchor});
+        text.textContent = label; svg.append(text);
+      }
+    }
+  }
+  function apply(value) {
+    const scenario = Object.hasOwn(paths, value) ? value : 'all';
+    select.value = scenario;
+    root.dataset.scenario = scenario;
+    root.dataset.view = scenario === 'all' ? 'all' : 'single';
+    for (const key of paths.all) document.getElementById(`n-${key}`).hidden = !paths[scenario].includes(key);
+    requestAnimationFrame(draw);
+  }
+  apply('all');
+  select.addEventListener('change', () => apply(select.value));
+  new ResizeObserver(draw).observe(flow);
+  if (document.fonts?.ready) document.fonts.ready.then(draw);
+})();
+</script>
+</body>
+</html>

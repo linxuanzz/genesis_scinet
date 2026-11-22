@@ -424,9 +424,11 @@ def reroute(ctx: AgentContext, assessment: Assessment, now: datetime, cannot_len
     refresh(ctx, [(path, now, deadline) for path in other_paths], now)
 
     # step3: find placements on those paths that carry the remaining bytes in time, and take the earliest finish
-    remaining_request =request.model_copy(update={
+    # a transfer not started yet keeps its start: the new circuit must not end before the transfer begins
+    earliest = max(now, reserved_offer.placement.start)
+    remaining_request = request.model_copy(update={
         "bytes": assessment.remaining_bytes,
-        "window": TimeWindow(earliest_start=now, latest_finish=deadline)})
+        "window": TimeWindow(earliest_start=earliest, latest_finish=deadline)})
     candidates = []
     for path in other_paths:
         found = search(ctx.ledger, path, remaining_request, now, ctx.cfg.rate_step_gbps)

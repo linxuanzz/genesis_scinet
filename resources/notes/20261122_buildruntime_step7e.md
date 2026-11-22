@@ -48,3 +48,51 @@
 4. **telemetry 发现链路 down、日历里又没有**,也记为计划外停机(不必等 link_down 告警)。
 5. **p95 下 down 的时段不能续订**:计划外停机按 p95 预计 3 小时修好,extend 要在这些时段续订会被账本拒绝,于是改走 reroute。
 6. 修复后传输回到满速、延长后的预约装得下,就不再被检出;之前“每次 tick 都重复检出、再由 triage 判为来得及”的问题随之消失。
+
+---
+
+### Demo
+
+## 怎么运行
+
+```bash
+cd src/lib
+python -m network_agent.tests.test_step7e_demo        # 全部 6 个场景
+python -m network_agent.tests.test_step7e_demo 3      # 只跑第 3 个
+
+```
+
+每个场景都从同一张网络出发：几条传输已经通过 graph A 订好，然后网络里发生一件事。每次 graph B 运行，都按阶段各打印一行：
+
+```
+10:00  EVENT  telemetry alert: link_down on L2
+  [forecast]   our booked slots that became short: L2 10:00–12:00
+  [detection]  cmt-1: link (damage ahead) → cause link_down at L2
+  [assess]     cmt-1: 32 TB left, not through before its reservation ends → needs a repair
+  [plan]       cmt-1: try extend → increase → reroute
+  [report]     → scheduling agent: cmt-1 [link_down] repaired by reroute; p95 11:46, deadline 15:00
+
+```
+
+有的场景还会打印出预报视图：某条链路每个时段是测量值还是预报值，以及 p50/p95。每个场景结束时给出模拟出来的实际完成时间。
+
+## 6 个场景
+
+| #   | 场景            | 展示什么                                                                         | 结果                    |
+| --- | ------------- | ---------------------------------------------------------------------------- | --------------------- |
+| 1   | 计划维护在前面       | 日历里的停机 → link 分支，传输开始前两小时就修好                                                 | extend，13:36 完成       |
+| 2   | 未登记的拥塞现在发生    | link 告警 → 预报从当前测量值逐渐过渡到平时水平 → 12:00 的传输在 10:00 就修好；预报低估了拥塞，传输开始后 flow 分支再补一次 | extend 两次，13:12 完成    |
+| 3   | 光纤中断          | 计划外停机的 p50/p95 窗口 → 先建新电路、切换传输、再拆旧电路                                         | reroute，11:46 完成      |
+| 4   | 端主机慢、网络正常     | flow 告警 → 定位不到网络原因 → 只延长，不动网络                                                | extend，13:37 完成       |
+| 5   | 两条传输共享一段拥塞的链路 | 低优先级的传输借速率给高优先级的，自己仍然按时完成                                                    | extend + lend         |
+| 6   | 本地怎么修都来不及     | 报告“未解决”，只报一次 → scheduling agent 决定放宽截止时间 → agent 恢复安静                        | unresolved → 12:46 完成 |
+
+## 顺带修的一个 bug
+
+写场景 2 时发现，reroute 给还没开始的传输重新安排时，新电路从“现在”开始，没有等到传输本来的开始时间。结果新电路在传输开始前就已经结束了。已修复：新电路不早于原预约的开始时间。
+
+## 其他
+
+- 每个场景都配了 pytest 检查，保证演示的结论和代码行为一致。现在共 348 个测试，全部通过。
+- 打印器 `PipelineSession` 加在 [tests/printing.py](../../src/lib/network_agent/tests/printing.py)；demo 在 [tests/test_step7e_demo.py](../../src/lib/network_agent/tests/test_step7e_demo.py)。[PLAN.md](http://PLAN.md) 的 7e 那一行也记上了 demo 和这个修复。
+- 场景 2 为了效果明显，把预报的过渡时间设成了 2 小时（默认是 30 分钟），打印的场景说明里写了这一点。
