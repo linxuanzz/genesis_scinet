@@ -86,6 +86,7 @@ class TransferRecord:
     instance_id: str | None = None
     finished_at: datetime | None = None
     first_prediction: datetime | None = None          # the earliest forecast of ready_at (part B)
+    first_forecast_at: datetime | None = None         # when that forecast was made
     last_prediction: datetime | None = None           # the last forecast before it was requested
 
 
@@ -201,7 +202,8 @@ class Cosimulation:
     tasks: dict[tuple[str, str], TaskRecord] = field(init=False, default_factory=dict)
     present: dict[tuple[str, str], dict[str, datetime]] = field(init=False, default_factory=dict)  # (wf, site) → file → since
     best_effort: list[TransferRecord] = field(init=False, default_factory=list)
-    predictions: dict[str, list[datetime]] = field(init=False, default_factory=dict)  # transfer id → forecast ready times
+    predictions: dict[str, list[tuple[datetime, datetime]]] = field(init=False, default_factory=dict)
+                                                      # transfer id → (forecast made at, ready time it forecast)
 
     def __post_init__(self):
         self.scheduler = MockSchedulingAgent(self.ctx, self.runs, self.settings)
@@ -313,7 +315,7 @@ class Cosimulation:
     def _forecast_demand(self, now: datetime, would_not_fit: list[tuple[datetime, str]]) -> None:
         forecast = forecast_scinet_demand(self.ctx, now)
         for expected in forecast.expected:
-            self.predictions.setdefault(expected.request.id, []).append(expected.request.window.earliest_start)
+            self.predictions.setdefault(expected.request.id, []).append((now, expected.request.window.earliest_start))
         would_not_fit += [(now, transfer_id) for transfer_id in forecast.would_not_fit]
 
     def _send(self, run: WorkflowRun, transfer: FileTransfer, now: datetime) -> None:
@@ -322,7 +324,7 @@ class Cosimulation:
             record = self.scheduler.book(run, transfer, now, self.net)
             predictions = self.predictions.get(record.transfer_id, [])
             if predictions:
-                record.first_prediction, record.last_prediction = predictions[0], predictions[-1]
+                (record.first_forecast_at, record.first_prediction), (_, record.last_prediction) = predictions[0], predictions[-1]
             return
         seconds = nbytes * 8 / (self.settings.best_effort_gbps * 1e9)
         key = transfer_key(run.workflow_id, transfer)

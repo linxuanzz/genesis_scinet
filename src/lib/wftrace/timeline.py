@@ -30,7 +30,8 @@ def label(record: TransferRecord) -> str:
         kind = "sifted"
     else:
         kind = record.file
-    return f"{chrom} {kind} · {record.nbytes / 1e12:.2f} TB → {record.dst.split('-')[0].upper()}"
+    size = f"{record.nbytes / 1e12:.2f} TB" if record.nbytes >= 1e11 else f"{record.nbytes / 1e9:.1f} GB"
+    return f"{chrom} {kind} · {size} → {record.dst.split('-')[0].upper()}"
 
 
 def path_name(path: tuple[str, ...]) -> str:
@@ -171,9 +172,11 @@ def write_timeline(config: dict, runs: list[WorkflowRun], result: CosimResult, m
              ("Demand forecast", f"{metrics['demand_forecast']['booked_transfers_predicted_before_request']} transfers "
                                  f"foreseen, {metrics['demand_forecast']['would_not_fit_reports']} would-not-fit warnings")]
     predicted = sorted((r for r in booked if r.first_prediction), key=lambda r: r.ready_at)
+    warned = {transfer_id for _, transfer_id in result.would_not_fit}
     forecast_rows = "".join(
-        f"<tr><td>{esc(r.workflow_id)}</td><td>{esc(label(r))}</td><td>{r.first_prediction:%H:%M:%S}</td>"
-        f"<td>{r.last_prediction:%H:%M:%S}</td><td>{r.ready_at:%H:%M:%S}</td></tr>" for r in predicted)
+        f"<tr><td>{esc(r.workflow_id)}</td><td>{esc(label(r))}</td><td>{r.first_forecast_at:%H:%M}</td>"
+        f"<td>{r.first_prediction:%H:%M:%S}</td><td>{r.last_prediction:%H:%M:%S}</td><td>{r.ready_at:%H:%M:%S}</td>"
+        f"<td>{'yes' if r.transfer_id in warned else ''}</td></tr>" for r in predicted)
     sites = config["program_sites"]
     by_site: dict[str, list[str]] = {}
     for program, site in sites.items():
@@ -245,7 +248,8 @@ tick = deadline (red: missed) · grey = task stage</div></div>
 <div class="panel">
 <b>Graph B (periodic checks, no events injected)</b><ul>{findings}</ul>
 <b>SciNet demand forecast</b> (part B: what the scheduling agent expects to request, from the workflow DAG)
-<table><tr><th>workflow</th><th>transfer</th><th>first forecast</th><th>last forecast</th><th>requested</th></tr>{forecast_rows}</table>
+<table><tr><th>workflow</th><th>transfer</th><th>first foreseen at</th><th>expected request (first)</th>
+<th>expected request (last)</th><th>actual request</th><th>"would not fit" warned</th></tr>{forecast_rows}</table>
 </div>
 </main></body></html>
 """
