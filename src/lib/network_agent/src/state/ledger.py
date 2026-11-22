@@ -101,6 +101,15 @@ class CapacityLedger:
 
     # ── reads ─────────────────────────────────────────────────────────────
 
+    def fork(self) -> "CapacityLedger":
+        """Isolated allocation workspace for proposals; planning cannot change the live ledger."""
+        trial = CapacityLedger(self.topology, self.cfg, self.origin)
+        with self._lock:
+            trial._observed = {link: list(slots) for link, slots in self._observed.items()}
+            trial._bookings = {key: Booking(b.id, b.path, dict(b.slot_gbps), b.state)
+                               for key, b in self._bookings.items()}
+        return trial
+
     def observed(self, link_id: str, i: int) -> Observation:
         return self._observed[link_id][i]
 

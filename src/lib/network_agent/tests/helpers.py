@@ -3,6 +3,7 @@
 from datetime import datetime, timezone
 
 from ..src.adapters.sense import MockSense
+from ..src.adapters.transfer_controller import MockTransferController
 from ..src.adapters.telemetry import MockFlows, MockTelemetry
 from ..src.context.context import AgentContext
 from ..src.graphs.protocol.commit import build_commit_graph
@@ -13,7 +14,7 @@ from ..src.graphs.protocol.reserve import build_reserve_graph
 from ..src.graphs.runtime.runtime import build_runtime_graph
 from ..src.models.config import load_config
 from ..src.models.schemas import (CommitRequest, ModifyRequest, QueryRequest, RateSegment, ReleaseRequest,
-                                  ReserveRequest, TimeWindow, TransferRequest)
+                                  RepairDecision, ReserveRequest, TimeWindow, TransferRequest)
 from ..src.models.topology import Topology
 from ..src.planning.estimate import IdealRateModel
 from ..src.sim.sim import MockNetwork
@@ -23,7 +24,7 @@ UTC = timezone.utc
 
 CFG = {"slot_seconds": 900, "horizon_seconds": 86400, "reserve_ttl_seconds": 60, "query_ttl_seconds": 900,
        "max_paths": 3, "rate_step_gbps": 10, "progress_lag_tolerance": 0.05, "repair_retry_seconds": 900,
-       "event_dedup_seconds": 60}
+       "event_dedup_seconds": 60, "reroute_cooldown_seconds": 300}
 
 
 def t(hh, mm=0, day=20):
@@ -75,13 +76,21 @@ def make_net(background_gbps=60):
     return n
 
 
+class ApproveFirstForTests:
+    """Explicit scheduler stand-in: production AgentContext has no default approval."""
+
+    def choose(self, proposals, now):
+        return RepairDecision(proposal_id=proposals[0].proposal_id)
+
+
 def make_ctx(net):
     """Ledger, telemetry and SENSE all look at the same simulated network."""
     cfg = load_config(CFG)
     return AgentContext(cfg=cfg, topology=net.topology, ledger=CapacityLedger(net.topology, cfg, origin=t(9)),
                         telemetry=CountingTelemetry(net, validity_seconds=300),
                         sense=MockSense(net, vlan_range=(3001, 3010)), rate_model=IdealRateModel(),
-                        flows=MockFlows(net))
+                        flows=MockFlows(net), repair_coordinator=ApproveFirstForTests(),
+                        transfer_controller=MockTransferController(net))
 
 
 # ── requests ───────────────────────────────────────────────────────────────
@@ -194,4 +203,5 @@ def follow_reroutes(net, out, now):
     old = {d.commitment_id: d.committed.reserved_offer.instance_id for d in out["deviations"]}
     for r in (r for rs in out.get("reports", {}).values() for r in rs):
         if r.action == "reroute":
-            net.switch_flow(old[r.commitment_id], r.commitment.circuit_id, now)
+            if r.commitment.circuit_id not in net._flows:
+                net.switch_flow(old[r.commitment_id], r.commitment.circuit_id, now)

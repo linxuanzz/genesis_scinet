@@ -1,0 +1,346 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Runtime 三模块</title>
+<style>
+:root {
+  --bg: #f7f7f5; --card: #ffffff; --sub: #fafafa; --ink: #1d1d1f; --mute: #6b6b70; --line: #c9c9cf;
+  --forecast: #2f6fde; --detect: #c2410c; --repair: #15803d; --ledger: #6b7280;
+  --extend: #2563eb; --raise: #16a34a; --reroute: #ea580c; --borrow: #9333ea;
+  --tbd: #b45309; --tbd-bg: #fef3c7; --tag: #ececef;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #161618; --card: #202023; --sub: #26262a; --ink: #ececef; --mute: #9a9aa2; --line: #4a4a52;
+    --forecast: #6ea2ff; --detect: #fb8c4c; --repair: #4ade80; --ledger: #a1a1aa;
+    --extend: #7aa7ff; --raise: #5ee08a; --reroute: #ff9a5a; --borrow: #c084fc;
+    --tbd: #fbbf24; --tbd-bg: #3a2f10; --tag: #34343a;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #161618; --card: #202023; --sub: #26262a; --ink: #ececef; --mute: #9a9aa2; --line: #4a4a52;
+  --forecast: #6ea2ff; --detect: #fb8c4c; --repair: #4ade80; --ledger: #a1a1aa;
+  --extend: #7aa7ff; --raise: #5ee08a; --reroute: #ff9a5a; --borrow: #c084fc;
+  --tbd: #fbbf24; --tbd-bg: #3a2f10; --tag: #34343a;
+}
+body { margin: 0; background: var(--bg); color: var(--ink);
+  font-family: -apple-system, "PingFang SC", "Helvetica Neue", "Microsoft YaHei", sans-serif; }
+main { max-width: 1440px; margin: 0 auto; padding: 24px 16px 40px; }
+h1 { font-size: 20px; margin: 0 0 14px; }
+svg { width: 100%; height: auto; display: block; }
+svg text { font-size: 13px; }
+.tx { fill: var(--ink); }
+.tb { fill: var(--ink); font-weight: 600; }
+.mt { fill: var(--mute); }
+.src { fill: var(--mute); font-family: ui-monospace, Menlo, monospace; }
+.h { font-size: 18px !important; font-weight: 700; }
+.fcT { fill: var(--forecast); } .dtT { fill: var(--detect); } .rpT { fill: var(--repair); } .lgT { fill: var(--ledger); }
+.mod { fill: var(--card); stroke-width: 2; }
+.mod.fc { stroke: var(--forecast); } .mod.dt { stroke: var(--detect); } .mod.rp { stroke: var(--repair); }
+.ledger { fill: var(--card); stroke: var(--ledger); stroke-width: 1.6; stroke-dasharray: 4 3; }
+.sub { fill: var(--sub); stroke: var(--line); stroke-width: 1; }
+.trig { fill: var(--card); stroke: var(--line); stroke-width: 1.5; }
+.tg { fill: var(--tag); }
+.cond { fill: var(--card); stroke: var(--line); stroke-width: 1; }
+.tl { fill: none; stroke: var(--line); stroke-width: 1.3; }
+.ln { fill: none; stroke: var(--mute); stroke-width: 1.6; }
+.nt { stroke: var(--forecast); stroke-dasharray: 5 4; }
+.ntT { fill: var(--forecast); }
+.chip { fill: var(--card); stroke-width: 1.5; }
+.chip.extend { stroke: var(--extend); } .chip.raise { stroke: var(--raise); }
+.chip.reroute { stroke: var(--reroute); } .chip.borrow { stroke: var(--borrow); }
+.chipt { font-weight: 600; }
+.chipt.extend { fill: var(--extend); } .chipt.raise { fill: var(--raise); }
+.chipt.reroute { fill: var(--reroute); } .chipt.borrow { fill: var(--borrow); }
+.tbdb { fill: var(--tbd-bg); } .tbdt { fill: var(--tbd); font-weight: 700; }
+</style>
+</head>
+<body>
+<main>
+<h1>Network Agent · Runtime</h1>
+<svg viewBox="0 0 1400 975" role="img" aria-label="预报、检测、修复三个模块及其触发与工作流">
+<defs>
+  <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+    <path d="M0,0 L10,5 L0,10 z" fill="var(--mute)"/>
+  </marker>
+</defs>
+<rect x="220" y="20" width="540" height="315" rx="10" class="mod fc"/>
+<rect x="420" y="358" width="960" height="46" rx="6" class="ledger"/>
+<rect x="220" y="432" width="670" height="528" rx="10" class="mod dt"/>
+<rect x="960" y="432" width="420" height="528" rx="10" class="mod rp"/>
+<rect x="20" y="76" width="170" height="36" rx="6" class="trig"/>
+<text x="105" y="99" class="tb" text-anchor="middle" >周期 / 过期</text>
+<rect x="20" y="128" width="170" height="46" rx="6" class="trig"/>
+<text x="105" y="148" class="tb" text-anchor="middle" >数据源</text>
+<text x="105" y="165" class="mt" text-anchor="middle" style="font-size:11px" >测量·日历·SENSE·历史·需求</text>
+<rect x="20" y="213" width="170" height="36" rx="6" class="trig"/>
+<text x="105" y="236" class="tb" text-anchor="middle" >link 告警</text>
+<rect x="20" y="677" width="170" height="36" rx="6" class="trig"/>
+<text x="105" y="700" class="tb" text-anchor="middle" >自我检查 tick</text>
+<rect x="20" y="742" width="170" height="36" rx="6" class="trig"/>
+<text x="105" y="765" class="tb" text-anchor="middle" >flow 告警</text>
+<path d="M190,94 H218" class="ln" marker-end="url(#a)"/>
+<path d="M190,151 H218" class="ln" marker-end="url(#a)"/>
+<path d="M190,231 H218" class="ln" marker-end="url(#a)"/>
+<path d="M190,695 H218" class="ln" marker-end="url(#a)"/>
+<path d="M190,760 H238" class="ln" marker-end="url(#a)"/>
+<text x="240" y="50" class="h fcT" text-anchor="start" >预报</text>
+<text x="290" y="50" class="mt" text-anchor="start" style="font-size:12px" >每条链路 × 每个时段</text>
+<rect x="250" y="70" width="64" height="21" rx="4" class="cond"/>
+<text x="256" y="85" class="tx" text-anchor="start" >当前时段</text>
+<text x="319" y="85" class="mt" text-anchor="start" >←</text>
+<text x="338" y="85" class="tx" text-anchor="start" >telemetry 测量</text>
+<text x="447" y="85" class="src" text-anchor="start" style="font-size:12px" >telemetry</text>
+<rect x="250" y="100" width="99" height="21" rx="4" class="cond"/>
+<text x="256" y="115" class="tx" text-anchor="start" >未来 · 已登记</text>
+<text x="354" y="115" class="mt" text-anchor="start" >←</text>
+<text x="373" y="115" class="tx" text-anchor="start" >停机日历 / SENSE</text>
+<text x="491" y="115" class="mt" text-anchor="start" style="font-size:12px" >p50 = p95</text>
+<text x="562" y="115" class="src" text-anchor="start" style="font-size:12px" >maintenance · sense</text>
+<rect x="250" y="130" width="86" height="21" rx="4" class="cond"/>
+<text x="256" y="145" class="tx" text-anchor="start" >未来 · 其余</text>
+<text x="341" y="145" class="mt" text-anchor="start" >←</text>
+<text x="360" y="145" class="tx" text-anchor="start" >统计基线 + 需求驱动</text>
+<text x="494" y="145" class="mt" text-anchor="start" style="font-size:12px" >p50 / p95</text>
+<text x="564" y="145" class="src" text-anchor="start" style="font-size:12px" >prediction</text>
+<rect x="639" y="132" width="60" height="17" rx="4" class="tbdb"/>
+<text x="644" y="145" class="tbdt" text-anchor="start" style="font-size:11px" >需求来源?</text>
+<text x="250" y="183" class="tb" text-anchor="start" >link 告警</text>
+<path d="M258,189 V262" class="tl"/>
+<path d="M258,206 H266" class="tl"/>
+<path d="M258,234 H266" class="tl"/>
+<path d="M258,262 H266" class="tl"/>
+<rect x="270" y="196" width="78" height="21" rx="4" class="cond"/>
+<text x="276" y="211" class="tx" text-anchor="start" >link_down</text>
+<text x="353" y="211" class="mt" text-anchor="start" >→</text>
+<text x="372" y="211" class="tx" text-anchor="start" >未来时段标 down，直到 link_up</text>
+<rect x="270" y="224" width="63" height="21" rx="4" class="cond"/>
+<text x="276" y="239" class="tx" text-anchor="start" >link_up</text>
+<text x="338" y="239" class="mt" text-anchor="start" >→</text>
+<text x="357" y="239" class="tx" text-anchor="start" >撤销，重算</text>
+<rect x="270" y="252" width="114" height="21" rx="4" class="cond"/>
+<text x="276" y="267" class="tx" text-anchor="start" >capacity_below</text>
+<text x="389" y="267" class="mt" text-anchor="start" >→</text>
+<text x="408" y="267" class="tx" text-anchor="start" >修正预测起点</text>
+<text x="250" y="310" class="tb" text-anchor="start" >输出</text>
+<text x="287" y="310" class="mt" text-anchor="start" >→</text>
+<text x="306" y="310" class="tx" text-anchor="start" >写账本；</text>
+<text x="362" y="310" class="tx" text-anchor="start" >够用 ↔ 不够用 有变化 → 通知检测</text>
+<text x="440" y="387" class="h lgT" text-anchor="start" style="font-size:15px" >账本</text>
+<text x="490" y="386" class="mt" text-anchor="start" >observed（p50 / p95 · source）   ·   own（我们的预约）</text>
+<path d="M560,335 V356" class="ln" marker-end="url(#a)"/>
+<text x="568" y="351" class="mt" text-anchor="start" style="font-size:12px" >写</text>
+<path d="M640,404 V430" class="ln" marker-end="url(#a)"/>
+<text x="648" y="422" class="mt" text-anchor="start" style="font-size:12px" >读</text>
+<path d="M1180,432 V406" class="ln" marker-end="url(#a)"/>
+<text x="1188" y="424" class="mt" text-anchor="start" style="font-size:12px" >改预约</text>
+<path d="M300,335 V468" class="ln nt" marker-end="url(#a)"/>
+<text x="308" y="400" class="ntT" text-anchor="start" style="font-size:12px" >通知</text>
+<text x="240" y="458" class="h dtT" text-anchor="start" >检测</text>
+<rect x="240" y="470" width="630" height="216" rx="8" class="sub"/>
+<text x="256" y="495" class="tb" text-anchor="start" >预约时段分支</text>
+<rect x="344" y="482" width="54" height="18" rx="4" class="tg"/>
+<text x="349" y="495" class="mt" text-anchor="start" style="font-size:11px" >预报通知</text>
+<rect x="402" y="482" width="34.64" height="18" rx="4" class="tg"/>
+<text x="407" y="495" class="mt" text-anchor="start" style="font-size:11px" >tick</text>
+<path d="M264,501 V660" class="tl"/>
+<path d="M264,520 H272" class="tl"/>
+<path d="M264,604 H272" class="tl"/>
+<path d="M264,632 H272" class="tl"/>
+<path d="M264,660 H272" class="tl"/>
+<rect x="276" y="510" width="51" height="21" rx="4" class="cond"/>
+<text x="282" y="525" class="tx" text-anchor="start" >确定性</text>
+<path d="M284,531 V576" class="tl"/>
+<path d="M284,548 H292" class="tl"/>
+<path d="M284,576 H292" class="tl"/>
+<text x="296" y="553" class="tx" text-anchor="start" >已登记 / 测量</text>
+<text x="392" y="553" class="mt" text-anchor="start" >→</text>
+<text x="411" y="553" class="tx" text-anchor="start" >继续</text>
+<text x="296" y="581" class="tx" text-anchor="start" >预测</text>
+<text x="331" y="581" class="mt" text-anchor="start" >→</text>
+<text x="350" y="581" class="tx" text-anchor="start" >提前量 X 内才继续</text>
+<rect x="467" y="568" width="22" height="17" rx="4" class="tbdb"/>
+<text x="472" y="581" class="tbdt" text-anchor="start" style="font-size:11px" >X?</text>
+<rect x="276" y="594" width="41" height="21" rx="4" class="cond"/>
+<text x="282" y="609" class="tx" text-anchor="start" >down</text>
+<text x="322" y="609" class="mt" text-anchor="start" >→</text>
+<rect x="341" y="595" width="61" height="19" rx="9.5" class="chip reroute"/>
+<text x="348" y="609" class="chipt reroute" text-anchor="start" style="font-size:12px" >reroute</text>
+<rect x="406" y="595" width="48" height="19" rx="9.5" class="chip raise"/>
+<text x="413" y="609" class="chipt raise" text-anchor="start" style="font-size:12px" >raise</text>
+<rect x="458" y="595" width="54" height="19" rx="9.5" class="chip extend"/>
+<text x="465" y="609" class="chipt extend" text-anchor="start" style="font-size:12px" >extend</text>
+<rect x="276" y="622" width="99" height="21" rx="4" class="cond"/>
+<text x="282" y="637" class="tx" text-anchor="start" >软损 · 单电路</text>
+<text x="380" y="637" class="mt" text-anchor="start" >→</text>
+<rect x="399" y="623" width="61" height="19" rx="9.5" class="chip reroute"/>
+<text x="406" y="637" class="chipt reroute" text-anchor="start" style="font-size:12px" >reroute</text>
+<rect x="464" y="623" width="48" height="19" rx="9.5" class="chip raise"/>
+<text x="471" y="637" class="chipt raise" text-anchor="start" style="font-size:12px" >raise</text>
+<rect x="515" y="623" width="54" height="19" rx="9.5" class="chip extend"/>
+<text x="522" y="637" class="chipt extend" text-anchor="start" style="font-size:12px" >extend</text>
+<rect x="276" y="650" width="99" height="21" rx="4" class="cond"/>
+<text x="282" y="665" class="tx" text-anchor="start" >软损 · 多电路</text>
+<text x="380" y="665" class="mt" text-anchor="start" >→</text>
+<rect x="399" y="651" width="61" height="19" rx="9.5" class="chip reroute"/>
+<text x="406" y="665" class="chipt reroute" text-anchor="start" style="font-size:12px" >reroute</text>
+<rect x="464" y="651" width="48" height="19" rx="9.5" class="chip raise"/>
+<text x="471" y="665" class="chipt raise" text-anchor="start" style="font-size:12px" >raise</text>
+<rect x="515" y="651" width="54" height="19" rx="9.5" class="chip extend"/>
+<text x="522" y="665" class="chipt extend" text-anchor="start" style="font-size:12px" >extend</text>
+<rect x="574" y="651" width="54" height="19" rx="9.5" class="chip borrow"/>
+<text x="581" y="665" class="chipt borrow" text-anchor="start" style="font-size:12px" >borrow</text>
+<rect x="240" y="702" width="630" height="244" rx="8" class="sub"/>
+<text x="256" y="727" class="tb" text-anchor="start" >flow 分支</text>
+<rect x="328.4" y="714" width="62.8" height="18" rx="4" class="tg"/>
+<text x="333" y="727" class="mt" text-anchor="start" style="font-size:11px" >flow 告警</text>
+<rect x="395.2" y="714" width="34.64" height="18" rx="4" class="tg"/>
+<text x="400" y="727" class="mt" text-anchor="start" style="font-size:11px" >tick</text>
+<path d="M264,733 V922" class="tl"/>
+<path d="M264,752 H272" class="tl"/>
+<path d="M264,892 H272" class="tl"/>
+<path d="M264,922 H272" class="tl"/>
+<rect x="276" y="742" width="86" height="21" rx="4" class="cond"/>
+<text x="282" y="757" class="tx" text-anchor="start" >吞吐 &lt; 预约</text>
+<text x="367" y="757" class="mt" text-anchor="start" >→</text>
+<text x="386" y="757" class="tx" text-anchor="start" >查当前 link</text>
+<path d="M284,763 V864" class="tl"/>
+<path d="M284,780 H292" class="tl"/>
+<path d="M284,808 H292" class="tl"/>
+<path d="M284,836 H292" class="tl"/>
+<path d="M284,864 H292" class="tl"/>
+<rect x="296" y="770" width="74" height="21" rx="4" class="cond"/>
+<text x="302" y="785" class="tx" text-anchor="start" >某跳 down</text>
+<text x="375" y="785" class="mt" text-anchor="start" >→</text>
+<rect x="394" y="771" width="61" height="19" rx="9.5" class="chip reroute"/>
+<text x="401" y="785" class="chipt reroute" text-anchor="start" style="font-size:12px" >reroute</text>
+<rect x="459" y="771" width="54" height="19" rx="9.5" class="chip extend"/>
+<text x="466" y="785" class="chipt extend" text-anchor="start" style="font-size:12px" >extend</text>
+<rect x="296" y="798" width="112" height="21" rx="4" class="cond"/>
+<text x="302" y="813" class="tx" text-anchor="start" >被挤占 · 单电路</text>
+<text x="413" y="813" class="mt" text-anchor="start" >→</text>
+<rect x="432" y="799" width="61" height="19" rx="9.5" class="chip reroute"/>
+<text x="439" y="813" class="chipt reroute" text-anchor="start" style="font-size:12px" >reroute</text>
+<rect x="497" y="799" width="54" height="19" rx="9.5" class="chip extend"/>
+<text x="504" y="813" class="chipt extend" text-anchor="start" style="font-size:12px" >extend</text>
+<rect x="296" y="826" width="112" height="21" rx="4" class="cond"/>
+<text x="302" y="841" class="tx" text-anchor="start" >被挤占 · 多电路</text>
+<text x="413" y="841" class="mt" text-anchor="start" >→</text>
+<rect x="432" y="827" width="61" height="19" rx="9.5" class="chip reroute"/>
+<text x="439" y="841" class="chipt reroute" text-anchor="start" style="font-size:12px" >reroute</text>
+<rect x="497" y="827" width="54" height="19" rx="9.5" class="chip extend"/>
+<text x="504" y="841" class="chipt extend" text-anchor="start" style="font-size:12px" >extend</text>
+<rect x="555" y="827" width="54" height="19" rx="9.5" class="chip borrow"/>
+<text x="562" y="841" class="chipt borrow" text-anchor="start" style="font-size:12px" >borrow</text>
+<rect x="296" y="854" width="64" height="21" rx="4" class="cond"/>
+<text x="302" y="869" class="tx" text-anchor="start" >路径正常</text>
+<text x="364" y="869" class="mt" text-anchor="start" style="font-size:12px" >利用率低</text>
+<text x="421" y="869" class="mt" text-anchor="start" >→</text>
+<rect x="440" y="855" width="54" height="19" rx="9.5" class="chip extend"/>
+<text x="447" y="869" class="chipt extend" text-anchor="start" style="font-size:12px" >extend</text>
+<rect x="276" y="882" width="182" height="21" rx="4" class="cond"/>
+<text x="282" y="897" class="tx" text-anchor="start" >吞吐 ≈ 预约 · 剩余 &gt; 可运</text>
+<text x="463" y="897" class="mt" text-anchor="start" >→</text>
+<rect x="482" y="883" width="54" height="19" rx="9.5" class="chip extend"/>
+<text x="489" y="897" class="chipt extend" text-anchor="start" style="font-size:12px" >extend</text>
+<rect x="540" y="883" width="48" height="19" rx="9.5" class="chip raise"/>
+<text x="547" y="897" class="chipt raise" text-anchor="start" style="font-size:12px" >raise</text>
+<rect x="591" y="883" width="61" height="19" rx="9.5" class="chip reroute"/>
+<text x="598" y="897" class="chipt reroute" text-anchor="start" style="font-size:12px" >reroute</text>
+<rect x="656" y="883" width="54" height="19" rx="9.5" class="chip borrow"/>
+<text x="663" y="897" class="chipt borrow" text-anchor="start" style="font-size:12px" >borrow</text>
+<rect x="276" y="912" width="51" height="21" rx="4" class="cond"/>
+<text x="282" y="927" class="tx" text-anchor="start" >都达标</text>
+<text x="332" y="927" class="mt" text-anchor="start" >→ 预约时段分支</text>
+<path d="M433,922 H845 V688" class="ln" marker-end="url(#a)"/>
+<path d="M890,700 H958" class="ln" marker-end="url(#a)"/>
+<text x="924" y="690" class="mt" text-anchor="middle" style="font-size:12px" >候选方案</text>
+<text x="980" y="458" class="h rpT" text-anchor="start" >修复</text>
+<text x="980" y="490" class="mt" text-anchor="start" style="font-size:12px" >输入：commitment + 候选方案</text>
+<path d="M988,496 V795" class="tl"/>
+<path d="M988,517 H996" class="tl"/>
+<path d="M988,547 H996" class="tl"/>
+<path d="M988,577 H996" class="tl"/>
+<path d="M988,795 H996" class="tl"/>
+<rect x="1000" y="507" width="141" height="21" rx="4" class="cond"/>
+<text x="1006" y="522" class="tx" text-anchor="start" >p95 完工 ≤ 预约结束</text>
+<text x="1146" y="522" class="mt" text-anchor="start" >→</text>
+<text x="1165" y="522" class="tx" text-anchor="start" >不动</text>
+<rect x="1000" y="537" width="164" height="21" rx="4" class="cond"/>
+<text x="1006" y="552" class="tx" text-anchor="start" >同条件失败过 · 未到重试</text>
+<text x="1169" y="552" class="mt" text-anchor="start" >→</text>
+<text x="1188" y="552" class="tx" text-anchor="start" >推迟</text>
+<rect x="1000" y="567" width="38" height="21" rx="4" class="cond"/>
+<text x="1006" y="582" class="tx" text-anchor="start" >否则</text>
+<text x="1043" y="582" class="mt" text-anchor="start" >→</text>
+<text x="1062" y="582" class="tx" text-anchor="start" >按序尝试（改动最小优先）</text>
+<path d="M1008,588 V747" class="tl"/>
+<path d="M1008,607 H1016" class="tl"/>
+<path d="M1008,635 H1016" class="tl"/>
+<path d="M1008,663 H1016" class="tl"/>
+<path d="M1008,747 H1016" class="tl"/>
+<rect x="1020" y="598" width="54" height="19" rx="9.5" class="chip extend"/>
+<text x="1027" y="612" class="chipt extend" text-anchor="start" style="font-size:12px" >extend</text>
+<text x="1080" y="612" class="mt" text-anchor="start" style="font-size:12px" >需调度方批准</text>
+<rect x="1020" y="626" width="48" height="19" rx="9.5" class="chip raise"/>
+<text x="1027" y="640" class="chipt raise" text-anchor="start" style="font-size:12px" >raise</text>
+<rect x="1020" y="654" width="61" height="19" rx="9.5" class="chip reroute"/>
+<text x="1027" y="668" class="chipt reroute" text-anchor="start" style="font-size:12px" >reroute</text>
+<path d="M1028,674 V719" class="tl"/>
+<path d="M1028,691 H1036" class="tl"/>
+<path d="M1028,719 H1036" class="tl"/>
+<text x="1040" y="696" class="tx" text-anchor="start" >未开始</text>
+<text x="1088" y="696" class="mt" text-anchor="start" >→</text>
+<text x="1107" y="696" class="tx" text-anchor="start" >重排预约</text>
+<text x="1040" y="724" class="tx" text-anchor="start" >已开始</text>
+<text x="1088" y="724" class="mt" text-anchor="start" >→</text>
+<text x="1107" y="724" class="tx" text-anchor="start" >新电路 → 切换 → 释放旧</text>
+<rect x="1020" y="738" width="54" height="19" rx="9.5" class="chip borrow"/>
+<text x="1027" y="752" class="chipt borrow" text-anchor="start" style="font-size:12px" >borrow</text>
+<text x="1080" y="752" class="mt" text-anchor="start" style="font-size:12px" >需调度方批准</text>
+<text x="1000" y="800" class="tb" text-anchor="start" >结果</text>
+<path d="M1008,806 V879" class="tl"/>
+<path d="M1008,823 H1016" class="tl"/>
+<path d="M1008,851 H1016" class="tl"/>
+<path d="M1008,879 H1016" class="tl"/>
+<text x="1020" y="828" class="tx" text-anchor="start" >成功</text>
+<text x="1055" y="828" class="mt" text-anchor="start" >→</text>
+<text x="1074" y="828" class="tx" text-anchor="start" >改账本</text>
+<text x="1020" y="856" class="tx" text-anchor="start" >失败</text>
+<text x="1055" y="856" class="mt" text-anchor="start" >→</text>
+<text x="1074" y="856" class="tx" text-anchor="start" >下一个方案</text>
+<text x="1020" y="884" class="tx" text-anchor="start" >全失败</text>
+<text x="1068" y="884" class="mt" text-anchor="start" >→</text>
+<text x="1087" y="884" class="tx" text-anchor="start" >上报 unresolved</text>
+<text x="800" y="50" class="tb" text-anchor="start" >图例</text>
+<rect x="800" y="66" width="54" height="19" rx="9.5" class="chip extend"/>
+<text x="807" y="80" class="chipt extend" text-anchor="start" style="font-size:12px" >extend</text>
+<text x="860" y="80" class="mt" text-anchor="start" style="font-size:12px" >延长</text>
+<rect x="800" y="94" width="48" height="19" rx="9.5" class="chip raise"/>
+<text x="807" y="108" class="chipt raise" text-anchor="start" style="font-size:12px" >raise</text>
+<text x="854" y="108" class="mt" text-anchor="start" style="font-size:12px" >同路径加速</text>
+<rect x="800" y="122" width="61" height="19" rx="9.5" class="chip reroute"/>
+<text x="807" y="136" class="chipt reroute" text-anchor="start" style="font-size:12px" >reroute</text>
+<text x="867" y="136" class="mt" text-anchor="start" style="font-size:12px" >换路径</text>
+<rect x="800" y="150" width="54" height="19" rx="9.5" class="chip borrow"/>
+<text x="807" y="164" class="chipt borrow" text-anchor="start" style="font-size:12px" >borrow</text>
+<text x="860" y="164" class="mt" text-anchor="start" style="font-size:12px" >向低优先级借</text>
+<rect x="1000" y="66" width="120" height="21" rx="4" class="cond"/>
+<text x="1006" y="81" class="tx" text-anchor="start" >条件</text>
+<text x="1130" y="81" class="mt" text-anchor="start" style="font-size:12px" >判断</text>
+<path d="M1000,108 H1060" class="ln nt"/>
+<text x="1070" y="113" class="mt" text-anchor="start" style="font-size:12px" >预报 → 检测 通知</text>
+<rect x="1000" y="128" width="16" height="17" rx="4" class="tbdb"/>
+<text x="1005" y="141" class="tbdt" text-anchor="start" style="font-size:11px" >?</text>
+<text x="1022" y="141" class="mt" text-anchor="start" style="font-size:12px" >待定</text>
+<text x="800" y="215" class="tb" text-anchor="start" >待定</text>
+<text x="800" y="243" class="mt" text-anchor="start" style="font-size:12px" >· 一个时段 = 已登记 + 预测叠加时，单个 source 不够</text>
+<text x="810" y="263" class="mt" text-anchor="start" style="font-size:12px" >→ 改用 p50 / p95 的差距判断确定性？</text>
+<text x="800" y="288" class="mt" text-anchor="start" style="font-size:12px" >· 提前量 X 取多少</text>
+<text x="800" y="310" class="mt" text-anchor="start" style="font-size:12px" >· 需求驱动的需求信息从哪来</text>
+</svg>
+</main>
+</body>
+</html>

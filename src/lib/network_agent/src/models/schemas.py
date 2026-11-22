@@ -427,6 +427,53 @@ Cause = Literal["link_down", "congestion", "late_start", "unlocated"]
 RepairAction = Literal["extend", "raise_rate", "reroute", "lend"]
 
 
+class RepairChange(Msg):
+    """One member of a complete proposed allocation; profiles expose both added and surrendered capacity."""
+
+    commitment_before: Commitment
+    path: list[str]
+    rate_profile_after: list[RateSegment]
+    predicted_finish_before: AwareDatetime | None
+    predicted_finish_after: AwareDatetime
+    latest_finish: AwareDatetime
+
+    @model_validator(mode="after")
+    def _consistent(self):
+        _check_profile(self.rate_profile_after)
+        if not self.rate_profile_after or self.predicted_finish_after > self.latest_finish:
+            raise ValueError("repair must finish within the request deadline")
+        return self
+
+
+class RepairProposal(Msg):
+    """PROVISIONAL. Scheduler approves a whole plan, never an arbitrary subset of its lenders."""
+
+    proposal_id: str
+    kind: Literal["extend", "borrow"]
+    target_commitment_id: str
+    target_action: Literal["extend", "raise_rate"]
+    effective_at: AwareDatetime
+    changes: list[RepairChange]
+
+    @model_validator(mode="after")
+    def _consistent(self):
+        ids = [change.commitment_before.commitment_id for change in self.changes]
+        _unique(ids, "commitment")
+        if self.target_commitment_id not in ids:
+            raise ValueError("proposal must include its target commitment")
+        if self.kind == "extend" and len(ids) != 1:
+            raise ValueError("extend cannot modify other commitments")
+        return self
+
+
+class RepairDecision(Msg):
+    """PROVISIONAL. None rejects all offered plans; a tighter target deadline constrains subsequent attempts."""
+
+    proposal_id: str | None = None
+    reason: str = ""
+    latest_finish: AwareDatetime | None = None
+
+
 class DeviationReport(Msg):
     """Graph B's report on one commitment that its reservation no longer covers (slides 12, 20).
 

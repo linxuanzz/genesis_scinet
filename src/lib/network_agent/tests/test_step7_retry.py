@@ -17,6 +17,7 @@ def blocked():
     """MAIN is down until the deadline; a separate pending hold fills ALT until then."""
     net = make_net()
     ctx = make_committed_ctx(net)
+    modify(ctx, "q1/T1/1", t(9), t(13), 40)
     net.start_flow("si-1", t(9), 50 * TB)
     net.add_outage("L2", t(9, 30), t(15))
     ctx.ledger.pending("other-hold", (L4,), [RateSegment(start=t(10), end=t(15), gbps=40)])
@@ -108,6 +109,7 @@ def test_remaining_bytes_change_retries_before_timeout(blocked):
         net._outages[link].clear()
     net.add_outage("L2", t(9, 30), t(10))
     net.add_background(L2, t(10), t(15), 35)
+    net.add_background(L2, t(12), t(15), 60)
     first = first_failure(ctx)
     out = runtime(ctx, TICK, t(10, 1))
     assert out["assessments"][0].remaining_bytes < first.conditions.remaining_bytes

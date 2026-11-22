@@ -511,3 +511,48 @@ Network Agent：检查容量并执行
 这些改变产生新的需求，再交给 Network Agent 检查。
 
 **如果时间、位置、数据量都不可调整，Scheduler 也没有额外的修复能力。**上报的意义仍然是让它停止按原计划推进依赖任务，处理等待、取消或失败，而不是保证它一定能修复。
+
+---
+
+> final conclusion
+
+### Extend:
+
+1. **Network Agent**：计算 deadline 内的延长方案，提供新增占用时段、带宽及预计完成时间，并检查容量冲突。
+2. **Scheduling Agent**：评估对当前 workflow 下游任务。这里不仅包括传输任务，也包括依赖数据的计算任务。其他传输的已有预约冲突，Network Agent 应先检查。
+3. **同意**：Network Agent 再次检查容量，执行延长并返回结果。
+4. **拒绝**：Scheduler 最好返回原因或新增约束，例如“必须在 11:10 前完成”；Network Agent 据此尝试其他方案，避免继续提出同样不满足要求的方案。
+
+Network agent计算延长方案，因为只有它才有ledger
+
+Scheduling agent拥有决策能力，因为延长时间可能影响下游任务
+
+### raise_rate：
+
+- 不需要scheduling agent参与，因为reroute本身不改变scheduling agent能看到的东西，比如保证的结束时间，在ledger允许范围内也不会影响其他流量
+- “**未被预约的可用余量**”是存在的，比如其他workflow释放了资源。
+- 不过需要提前确定瓶颈是网络还是主机
+
+### reroute：
+
+不需要scheduling agent参与
+
+但是需要考虑：
+
+- 新路径是否真的避开瓶颈，而不只是表面上换了几条边。
+- 新路径及共享链路有没有足够容量。
+- 是否会影响其他预约。
+- 是否因为观测波动而频繁来回切换。
+
+### borrow
+
+1. **Network Agent 提出候选方案**：希望能够妥协的 commitment IDs、调整时段、新速率、预计完成时间
+2. **Scheduling Agent 选择方案**：根据优先级、任务依赖和整体计划，批准某个方案；都不可接受则返回 none。
+3. **Network Agent 执行**：重新检查容量和 commitment 状态，再执行获批修改。返回 none 则该次 borrow 失败。
+
+**候选最好是完整的重分配方案，而不只是可妥协的 commitment 名单**：可能需要两个流共同让出容量才够用，Scheduler 不能任意挑一个就认为可行。
+
+
+
+总的来说计算和决策必须分离，不能只交给一个人。因为schedulin agent有workflow和transfer依赖信息，network agent有ledger，网络信息
+

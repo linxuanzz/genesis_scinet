@@ -24,6 +24,7 @@ class NetAgentConfig(BaseModel):
     max_paths: PositiveInt            # max candidate paths per endpoint pair (fewest hops first)
     repair_retry_seconds: PositiveInt  # retry an unchanged failed repair on the next event after this interval
     event_dedup_seconds: PositiveInt   # suppress identical successfully processed alerts for this long
+    reroute_cooldown_seconds: PositiveInt  # minimum time between confirmed path switches of one commitment
     rate_step_gbps: PositiveFloat     # offer rates are rounded to this step (slide 7's 40 / 100 / 20 Gbps are all multiples of 10)
     progress_lag_tolerance: Annotated[float, Field(ge=0, lt=1)]   # graph B: a transfer deviates once it lags the bytes
                                       # due under its reservation by more than this fraction of them (step 7)

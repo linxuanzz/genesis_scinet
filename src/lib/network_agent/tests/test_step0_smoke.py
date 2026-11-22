@@ -31,6 +31,8 @@ def test_config_from_yaml(tmp_path):
     {**CFG, "repair_retry_seconds": -1},
     {k: v for k, v in CFG.items() if k != "event_dedup_seconds"},
     {**CFG, "event_dedup_seconds": 0},
+    {k: v for k, v in CFG.items() if k != "reroute_cooldown_seconds"},
+    {**CFG, "reroute_cooldown_seconds": 0},
     {**CFG, "horizon_seconds": 1000},                        # not a whole number of slots
 ])
 def test_config_rejects_bad_input(bad):

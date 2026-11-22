@@ -1,1 +1,1 @@
-"""Interfaces to outside systems (telemetry, SENSE), each with a mock."""
+"""Interfaces to outside systems (telemetry, SENSE, scheduling agent, transfer endpoint); mocks where the simulation needs them."""

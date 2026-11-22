@@ -28,9 +28,12 @@ from itertools import count
 from typing import Literal
 
 from ..adapters.sense import SenseAdapter
+from ..adapters.scheduling_agent import RepairCoordinator
+from ..adapters.transfer_controller import TransferController
 from ..adapters.telemetry import FlowSource, TelemetrySource
 from ..models.config import NetAgentConfig
-from ..models.schemas import Cause, Commitment, DeviationReport, FlowProgress, Msg, ServiceIntent, TransferRequest
+from ..models.schemas import (Cause, Commitment, DeviationReport, FlowProgress, Msg, RepairProposal,
+                              ServiceIntent, TransferRequest)
 from ..models.topology import Path, Topology
 from ..planning.estimate import RateModel
 from ..planning.placement import Placement
@@ -131,6 +134,8 @@ class RepairConditions:
     request: TransferRequest
     remaining_bytes: int
     cap_gbps: float | None
+    deadline: datetime
+    reroute_ready: bool
     paths: tuple[Path, ...]
     # (directed link, slot, up, capacity without us, our bookings)
     capacity: tuple[tuple[str, int, bool, float, float], ...]
@@ -153,6 +158,12 @@ class AgentContext:
     sense: SenseAdapter
     rate_model: RateModel
     flows: FlowSource                                                 # transfer progress (step 7, provisional)
+    repair_coordinator: RepairCoordinator | None = None
+    transfer_controller: TransferController | None = None
+    repair_proposals: list[RepairProposal] = field(default_factory=list)  # current invocation only
+    repair_deadlines: dict[str, datetime] = field(default_factory=dict)   # scheduler's tightened constraints
+    repair_constraint_commitments: dict[str, Commitment] = field(default_factory=dict)
+    last_reroute: dict[str, datetime] = field(default_factory=dict)
     offer_book: dict[str, QueriedOffer] = field(default_factory=dict)
     reservations: dict[str, Reservation] = field(default_factory=dict)
     commitments: dict[str, Commitment] = field(default_factory=dict)

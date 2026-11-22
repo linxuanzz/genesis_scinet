@@ -61,9 +61,15 @@ class Assessment:
 
 
 def expected_gbps(ledger: CapacityLedger, path: Path, slot: int, gbps: float, booking_id: str | None) -> float:
-    """The rate a circuit of gbps along path is expected to get in this slot. ``booking_id`` is the circuit's
-    own booking: what it books in the slot now is replaced by gbps, so it is not counted twice. None for a
-    circuit not booked yet."""
+    """
+    - The rate a circuit of gbps along path is expected to get in this slot. 
+    - ``booking_id`` is the circuit's own booking: what it books in the slot now is replaced by gbps, so it is not counted twice. None for a
+    circuit not booked yet.
+    - Example: this flow wants 10 Gbps on path A→B→C.
+        Link A-B: 40 Gbps available, 30 Gbps booked by us in total. Not oversubscribed, so the flow keeps 10 Gbps.
+        Link B-C: 15 Gbps available, 20 Gbps booked by us in total. Oversubscribed, so the flow gets 15 × 10 / 20 = 7.5 Gbps.
+        The result is the minimum over the links: 7.5 Gbps.
+    """
     booked_now = ledger.booking(booking_id).slot_gbps.get(slot, 0.0) if booking_id else 0.0
     rate = gbps
     for link in path:
@@ -89,8 +95,10 @@ def expected_rates_on_circuit(ledger: CapacityLedger, path: Path, gbps: float, s
         rate = expected_gbps(ledger, path, slot, gbps, booking_id)
         if cap is not None:
             rate = min(rate, cap)
+        
+        # same rate as the slot before: merge
         if spans and spans[-1][1] == span_start and abs(spans[-1][2] - rate) <= EPS_GBPS:
-            spans[-1] = (spans[-1][0], span_end, rate)                 # same rate as the slot before: merge
+            spans[-1] = (spans[-1][0], span_end, rate)                 
         else:
             spans.append((span_start, span_end, rate))
     return spans
@@ -134,6 +142,7 @@ def assess(ctx: AgentContext, deviation: Deviation, now: datetime) -> Assessment
     finish = ctx.rate_model.finish_at_expected_rates(reserved, remaining)
     kept = ctx.rate_model.finish_at_expected_rates(extended, remaining)
     deadline = min(reserved_offer.request.window.latest_finish, ctx.ledger.horizon_end)
+    deadline = min(deadline, ctx.repair_deadlines.get(deviation.commitment_id, deadline))
     return Assessment(deviation, deadline, cap, finish, kept)
 
 

@@ -97,18 +97,19 @@ def test_extend_across_damage_already_held(net, ctx):
 # ── raise_rate ────────────────────────────────────────────────────────────
 
 def test_raise_rate_when_extending_is_too_late():
-    """L2 leaves 50; T (18 TB, by 10:10) runs 09:00–10:00 @ 40 and loses 15 minutes to an outage. At 09:40
-    10.5 TB are left: at 40 that is 10:15, too late; at 50 it is 10:08."""
+    """T has an approved reservation until 10:10. After an outage, 50 Gbps recovers the loss by 10:08
+    using free capacity, without moving the approved end or changing another commitment."""
     net = make_net(50)
     ctx = make_ctx(net)
     si = book(ctx, "q1", tr("T", nbytes=18 * TB, window=(t(9), t(10, 10))), 2)
     assert ctx.commitments["cmt-1"].rate_profile[0].gbps == 40
+    modify(ctx, "q1/T/2", t(9), t(10, 10), 40)
     net.start_flow(si, t(9), 18 * TB)
     net.add_outage("L2", t(9, 15), t(9, 30))
     out = runtime(ctx, TICK, t(9, 40))
     r = one_report(out)
     seg = r.commitment.rate_profile[0]
-    assert (r.action, seg.start, seg.end, seg.gbps) == ("raise_rate", t(9), t(10, 8), 50)
+    assert (r.action, seg.start, seg.end, seg.gbps) == ("raise_rate", t(9), t(10, 10), 50)
     assert own(ctx, L2, 9) == 40 and own(ctx, L2, 9, 45) == 50                 # the slots over keep their 40
     assert finished(net, si) == t(10, 8)
     assert net.flow_trace(si, t(9, 40)).sent == 7.5 * TB                     # the past is not rewritten
@@ -123,6 +124,7 @@ def tight():
     net = make_net()
     ctx = make_ctx(net)
     book(ctx, "q1", tr("T1", window=(t(9), t(12, 10))), 1)
+    modify(ctx, "q1/T1/1", t(9), t(12, 5), 40)
     net.start_flow("si-1", t(9), 50 * TB)
     net.add_background(L2, t(9, 30), t(10, 30), 20)
     return net, ctx
@@ -166,11 +168,12 @@ def test_a_failed_reroute_is_undone(tight, op):
 
 
 def test_a_refused_extension_is_rolled_back_and_the_next_step_tried(net, ctx):
-    """SENSE refuses the extension: the ledger gets its old profile back, and the transfer is rerouted."""
+    """SENSE refuses the extension; later steps cannot preserve the old end, so the failure is reported."""
     net.add_outage("L2", t(9, 30), t(9, 45))
     ctx.sense.fail_next("modify")
     out = runtime(ctx, TICK, t(10))
-    assert one_report(out).action == "reroute"
+    assert one_report(out).outcome == "unresolved"
+    assert [reason.split(":")[0] for reason in out["repair_results"][0].tried] == ["extend", "raise_rate", "reroute"]
     assert own(ctx, L2, 12) == 0                                              # the extension did not stay
 
 
@@ -220,7 +223,7 @@ def test_lenders_are_put_back_if_borrowing_does_not_help(two_priorities):
 def test_higher_priority_is_repaired_first():
     """TA and TB, 18 TB each, both 09:00–10:00 @ 40 on MAIN, where L2 leaves 80 (40 after 10:00). Both lose
     15 minutes to an outage and need L2 for 15 more minutes after 10:00, where only one fits: the higher
-    priority extends and the other is rerouted."""
+    priority extends after approval and the other is reported unresolved."""
     def run(prio_a, prio_b):
         net = make_net(20)
         net.add_background(L2, t(10), t(11), 40)
@@ -232,8 +235,8 @@ def test_higher_priority_is_repaired_first():
             net.start_flow(si, t(9), 18 * TB)
         net.add_outage("L2", t(9, 15), t(9, 30))
         return {r.commitment_id: r.action for r in runtime(ctx, TICK, t(9, 40))["reports"]["link_down"]}
-    assert run(1, 2) == {"cmt-2": "extend", "cmt-1": "reroute"}
-    assert run(2, 1) == {"cmt-1": "extend", "cmt-2": "reroute"}
+    assert run(1, 2) == {"cmt-2": "extend", "cmt-1": None}
+    assert run(2, 1) == {"cmt-1": "extend", "cmt-2": None}
 
 
 # ── the rule policy ───────────────────────────────────────────────────────

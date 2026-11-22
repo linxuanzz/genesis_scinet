@@ -46,7 +46,7 @@ from langgraph.runtime import Runtime
 from pydantic import ValidationError
 
 from ...context.context import AgentContext, AlertKey, RepairConditions
-from ...models.schemas import RUNTIME_EVENT, Cause, DeviationReport, TelemetryAlert, Tick
+from ...models.schemas import RUNTIME_EVENT, Cause, DeviationReport, RepairProposal, TelemetryAlert, Tick
 from ...runtime.deviation import Deviation, find_deviations_for_event, find_deviations_on_damaged_hops
 from ...runtime.forecast import Assessment, assess_all
 from ...runtime.repair import (NOTHING_TO_TRY, RepairPlan, RepairResult, RulePolicy, RuntimePolicy, execute, plan_all,
@@ -71,6 +71,7 @@ class RuntimeState(TypedDict, total=False):
     plans: list[RepairPlan]                       # written by plan_local_repair: those with something to try
     repair_results: list[RepairResult]            # written by plan_local_repair (nothing to try), added to by
                                                   # execute_repair
+    repair_proposals: list[RepairProposal]        # complete allocations offered to the scheduler in this run
     reports: dict[Cause, list[DeviationReport]]   # output, written by report_deviation
 
 
@@ -100,6 +101,7 @@ def deduplicate_event(state: RuntimeState, runtime: Runtime[AgentContext]) -> di
 def classify_event(state: RuntimeState, runtime: Runtime[AgentContext]) -> dict:
     """R1: refresh what the event concerns and find the commitments that deviate, with their cause."""
     forget_changed_commitments(runtime.context)
+    runtime.context.repair_proposals.clear()
     found = find_deviations_for_event(runtime.context, state["parsed"], state["now"])
     return {"checked": found.checked, "refreshed": found.refreshed, "deviations": found.deviations}
 
@@ -139,7 +141,9 @@ def plan_local_repair(state: RuntimeState, runtime: Runtime[AgentContext], polic
 
 def execute_repair(state: RuntimeState, runtime: Runtime[AgentContext]) -> dict:
     """Try the planned repairs; a commitment none of them repairs is unresolved."""
-    return {"repair_results": state["repair_results"] + execute(runtime.context, state["plans"], state["now"])}
+    results = execute(runtime.context, state["plans"], state["now"])
+    return {"repair_results": state["repair_results"] + results,
+            "repair_proposals": list(runtime.context.repair_proposals)}
 
 
 def report_deviation(state: RuntimeState, runtime: Runtime[AgentContext]) -> dict:

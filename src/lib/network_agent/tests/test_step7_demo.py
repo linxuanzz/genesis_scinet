@@ -1,4 +1,6 @@
-"""Step 7 demo: graph B in five scenarios, one per kind of deviation and one for priority. Each prints the
+"""Uses an explicit approve-first mock scheduler and a mock transfer controller.
+
+Step 7 demo: graph B in five scenarios, one per kind of deviation and one for priority. Each prints the
 network, the commitments, every run of graph B (the nodes it ran, the deviations, the forecast, the plan
 and the DeviationReports) and when the simulated transfers actually finish.
 
@@ -35,12 +37,13 @@ def congestion():
     net = make_net()
     ctx = make_ctx(net)
     book(ctx, "q1", tr("T1", window=(t(9), t(12, 10))), 1)
+    modify(ctx, "q1/T1/1", t(9), t(12, 5), 40)
     s = RuntimeSession("Congestion: 20 Gbps more on L2 09:30–10:30, T1 due by 12:10", net, ctx)
     net.start_flow("si-1", t(9), 50 * TB)
     net.add_background(L2, t(9, 30), t(10, 30), 20)
     s.event("traffic telemetry cannot see takes 20 of our 40 on L2 until 10:30")
     out = s.run(TICK, t(10))
-    s.event("the WMS moves the rest of T1 to the new circuit")
+    s.event("the transfer controller confirmed the switch before the old circuit was released")
     follow_reroutes(net, out, t(10))
     s.print_commitments()
     return s, [out], s.finishes("si-2")

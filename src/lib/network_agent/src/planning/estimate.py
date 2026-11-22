@@ -39,6 +39,12 @@ class IdealRateModel:
 
     def finish_at_expected_rates(self, expected_rates: ExpectedRates,
                                  nbytes: float) -> tuple[datetime, datetime] | None:
+
+        """
+        - The return values are two identical times, corresponding to (p50, p95). 
+        - This model is calculated at a definite rate without taking fluctuations into account, 
+        so the two values are the same
+        """
         left = nbytes
         for span_start, span_end, gbps in expected_rates:
             if left <= 0:
