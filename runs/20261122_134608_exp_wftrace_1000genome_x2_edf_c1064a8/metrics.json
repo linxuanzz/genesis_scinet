@@ -1,0 +1,62 @@
+{
+  "workflows": {
+    "WF-A": {
+      "start": "09:00",
+      "tasks_done": 52,
+      "tasks": 52,
+      "makespan_min": 56.4,
+      "compute_only_makespan_min": 34.1,
+      "inputs_staged_min": 21.9,
+      "booked_transfers": 6,
+      "booked_TB": 12.89,
+      "best_effort_transfers": 29,
+      "best_effort_GB": 3.3,
+      "deadlines_met": 6,
+      "deadline_relaxed": 0,
+      "limited_by": {
+        "background_traffic": 2,
+        "None": 4
+      },
+      "mean_booked_gbps": 66.7,
+      "mean_wait_to_start_min": 1.33
+    },
+    "WF-B": {
+      "start": "09:10",
+      "tasks_done": 52,
+      "tasks": 52,
+      "makespan_min": 63.4,
+      "compute_only_makespan_min": 34.1,
+      "inputs_staged_min": 28.9,
+      "booked_transfers": 6,
+      "booked_TB": 12.89,
+      "best_effort_transfers": 29,
+      "best_effort_GB": 3.3,
+      "deadlines_met": 5,
+      "deadline_relaxed": 1,
+      "limited_by": {
+        "background_traffic": 3,
+        "None": 3
+      },
+      "mean_booked_gbps": 70.0,
+      "mean_wait_to_start_min": 6.17
+    }
+  },
+  "runtime": {
+    "ticks": 15,
+    "deviations": 0,
+    "reports": 0
+  },
+  "demand_forecast": {
+    "booked_transfers_predicted_before_request": 8,
+    "booked_transfers": 12,
+    "first_prediction_abs_error_s": {
+      "mean": 23.4,
+      "max": 114.7
+    },
+    "last_prediction_abs_error_s": {
+      "mean": 5.2,
+      "max": 15.6
+    },
+    "would_not_fit_reports": 8
+  }
+}
