@@ -1,0 +1,103 @@
+warmup_iters: 3
+repeat_iters: 10
+seed: 42
+env_snapshot:
+  commands:
+  - git rev-parse HEAD
+  - python3 -VV
+  libraries: []
+  pip_freeze: true
+tag: exp_wftrace_1000genome_x2
+description: 两份放大后的 1000genome trace 经站点分配后,由 mock scheduling agent 逐条向 network agent
+  预约跨站点传输,在模拟网络上执行;graph B 正常巡检,预报模块 B 按 DAG 预报 SciNet 需求。
+hypothesis: H1 预约传输全部按期完成且巡检无偏离;H2 后到的 WF-B 受 WF-A 已占容量限制;H3 09:00 对 WF-B 传输的需求预报字节量一致、请求时间误差可量化。
+entry: src.experiments.exp_wftrace_1000genome_x2.run:entry
+trace: external/SciNetGenesis/workflows/example_workflows/1000genome-chameleon-2ch-100k-001.json
+day: '2026-10-20'
+data_site: aps-beamline-8id
+program_sites:
+  individuals: ornl-n01
+  sifting: ornl-n01
+  individuals_merge: anl-n02
+  mutation_overlap: anl-n02
+  frequency: anl-n02
+data_scale: 5000
+compute_scale: 10
+workflows:
+- workflow_id: WF-A
+  start: 09:00
+  priority: 1
+- workflow_id: WF-B
+  start: 09:10
+  priority: 1
+cosim:
+  step_seconds: 10
+  tick_seconds: 300
+  reserve_threshold_bytes: 1000000000
+  reference_gbps: 20
+  best_effort_gbps: 10
+  request_order: as_listed
+  end: '21:00'
+topology:
+  nodes:
+  - aps-beamline-8id
+  - anl-n01
+  - anl-n02
+  - esnet-atl
+  - esnet-chi
+  - esnet-nash
+  - ornl-n01
+  links:
+  - id: APS-LCRC
+    a: aps-beamline-8id
+    b: anl-n01
+    capacity_gbps: 100
+  - id: L0
+    a: anl-n01
+    b: anl-n02
+    capacity_gbps: 100
+  - id: L1
+    a: anl-n02
+    b: esnet-atl
+    capacity_gbps: 100
+  - id: L2
+    a: esnet-atl
+    b: esnet-chi
+    capacity_gbps: 100
+  - id: L3
+    a: esnet-chi
+    b: ornl-n01
+    capacity_gbps: 100
+  - id: L4
+    a: esnet-atl
+    b: esnet-nash
+    capacity_gbps: 40
+  - id: L5
+    a: esnet-nash
+    b: esnet-chi
+    capacity_gbps: 40
+background:
+- link: L2:esnet-atl>esnet-chi
+  start: 09:00
+  end: '12:00'
+  gbps: 40
+  registered: true
+telemetry_validity_seconds: 300
+sense_vlan_range:
+- 3001
+- 3100
+network_agent:
+  slot_seconds: 60
+  horizon_seconds: 43200
+  reserve_ttl_seconds: 60
+  query_ttl_seconds: 900
+  max_paths: 3
+  rate_step_gbps: 10
+  progress_lag_tolerance: 0.05
+  repair_retry_seconds: 900
+  event_dedup_seconds: 60
+  reroute_cooldown_seconds: 300
+  forecast_validity_seconds: 300
+  forecast_decay_seconds: 1800
+  outage_repair_p50_seconds: 3600
+  outage_repair_p95_seconds: 10800
